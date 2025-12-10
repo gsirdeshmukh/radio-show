@@ -65,6 +65,10 @@
     dom.loadShowBtn = document.getElementById("load-show-btn");
     dom.saveTracksBtn = document.getElementById("save-tracks-btn");
     dom.loadInput = document.getElementById("load-input");
+    dom.sessionTitle = document.getElementById("session-title");
+    dom.sessionHost = document.getElementById("session-host");
+    dom.sessionGenre = document.getElementById("session-genre");
+    dom.sessionDate = document.getElementById("session-date");
   }
 
   function bindEvents() {
@@ -87,6 +91,10 @@
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
     dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
     dom.loadInput.addEventListener("change", handleImport);
+    dom.sessionDate.valueAsDate = new Date();
+    [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate].forEach((el) => {
+      el.addEventListener("input", persistLocal);
+    });
     dom.masterVolume.addEventListener("input", (e) => {
       state.masterVolume = Number(e.target.value) / 100;
       if (state.player) {
@@ -157,6 +165,7 @@
     applySavedTheme();
     handlePkceCallback();
     restoreLocal();
+    hydrateSessionFields();
   }, { once: true });
 
   async function connectSpotify() {
@@ -335,11 +344,11 @@
 
   function renderResults() {
     dom.results.innerHTML = "";
-    if (!state.searchResults.length) {
-      dom.results.innerHTML = `<li><div class="meta"><div class="title">No results yet.</div><div class="subtitle">Search for a song.</div></div></li>`;
-      return;
-    }
-    state.searchResults.forEach((track) => {
+      if (!state.searchResults.length) {
+        dom.results.innerHTML = `<li><div class="meta"><div class="title">No results yet.</div><div class="subtitle">Search for a song.</div></div></li>`;
+        return;
+      }
+      state.searchResults.forEach((track) => {
       const li = document.createElement("li");
       li.innerHTML = `
         <div class="meta">
@@ -353,7 +362,11 @@
       addBtn.textContent = "Add";
       addBtn.className = "primary";
       addBtn.addEventListener("click", () => addTrackToShow(track));
+      const similarBtn = document.createElement("button");
+      similarBtn.textContent = "Similar";
+      similarBtn.addEventListener("click", () => fetchRecommendations(track));
       actions.appendChild(addBtn);
+      actions.appendChild(similarBtn);
       li.appendChild(actions);
       dom.results.appendChild(li);
     });
@@ -371,6 +384,8 @@
       bpm: null,
       key: null,
       energy: null,
+      album: track.album,
+      note: "",
       uri: track.uri,
       fadeIn: false,
       fadeOut: false,
@@ -399,6 +414,31 @@
       renderSegments();
     } catch (err) {
       console.warn("audio features fetch failed", err);
+    }
+  }
+
+  async function fetchRecommendations(track) {
+    if (!state.token) {
+      alert("Connect with a token first.");
+      return;
+    }
+    const trackId = track.id || getTrackIdFromUri(track.uri);
+    if (!trackId) return;
+    try {
+      const res = await fetch(
+        `https://api.spotify.com/v1/recommendations?limit=5&seed_tracks=${trackId}`,
+        {
+          headers: { Authorization: `Bearer ${state.token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Recommendations failed");
+      const data = await res.json();
+      const recs = data.tracks || [];
+      if (!recs.length) return;
+      state.searchResults = recs;
+      renderResults();
+    } catch (err) {
+      console.error(err);
     }
   }
 
@@ -511,6 +551,7 @@
       bpm: null,
       key: null,
       energy: null,
+      note: "",
       blob: state.currentRecording.blob,
       url: state.currentRecording.url,
       fadeIn: false,
@@ -722,6 +763,14 @@
       trim.appendChild(endLabel);
       trim.appendChild(trimRange);
       trim.appendChild(selection);
+      const noteField = document.createElement("textarea");
+      noteField.placeholder = "Note about this segment";
+      noteField.value = segment.note || "";
+      noteField.addEventListener("input", (e) => {
+        segment.note = e.target.value;
+        persistLocal();
+      });
+      trim.appendChild(noteField);
 
       if (segment.type === "voice") {
         const wf = document.createElement("canvas");
@@ -1183,6 +1232,15 @@
 
   function persistLocal() {
     try {
+      localStorage.setItem(
+        "rs_session_meta",
+        JSON.stringify({
+          title: dom.sessionTitle.value,
+          host: dom.sessionHost.value,
+          genre: dom.sessionGenre.value,
+          date: dom.sessionDate.value,
+        })
+      );
       const data = state.segments.map((s) => {
         if (s.type === "voice") {
           return { ...s, blob: undefined }; // avoid storing blobs
@@ -1199,22 +1257,37 @@
     try {
       const raw = localStorage.getItem("rs_show_segments");
       if (!raw) return;
-      const data = JSON.parse(raw);
-      if (!Array.isArray(data)) return;
-      state.segments = data;
-      renderSegments();
-    } catch (err) {
-      console.warn("restore local failed", err);
-    }
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return;
+    state.segments = data;
+    renderSegments();
+  } catch (err) {
+    console.warn("restore local failed", err);
   }
+}
 
-  function blobToDataUrl(blob) {
+function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  function hydrateSessionFields() {
+    try {
+      const metaRaw = localStorage.getItem("rs_session_meta");
+      if (metaRaw) {
+        const meta = JSON.parse(metaRaw);
+        dom.sessionTitle.value = meta.title || "";
+        dom.sessionHost.value = meta.host || "";
+        dom.sessionGenre.value = meta.genre || "";
+        if (meta.date) dom.sessionDate.value = meta.date;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   function uid() {

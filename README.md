@@ -41,3 +41,4 @@ GitHub Pages example (free HTTPS):
 - Sharing/export not wired yet—focus is a personal live radio flow for now.
 - Per-track metadata (BPM, key, energy) is fetched via `GET /v1/audio-features` when available.
 - Theme dots in the header let you swap color palettes live.
+- Save/Load: export full shows (with voice clips embedded) or tracks only; load JSON back in. Auto-saves metadata to localStorage.
