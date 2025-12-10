@@ -24,13 +24,20 @@
       <div class="chip">playlist pilot</div>
       <div class="chip">minimal + 2d</div>
     </div>
+    <div class="theme-switch" id="theme-switch">
+      <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
+      <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
+      <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
+      <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
+    </div>
   </header>
 
   <main class="grid">
-    <section class="panel connect">
+    <section class="panel connect" id="connect-panel">
       <div class="panel-head">
         <h2>Connect</h2>
         <span class="hint">needs a Spotify OAuth token</span>
+        <button id="connect-toggle" class="ghost small">Hide</button>
       </div>
       <label class="field">
         <span>Client ID (PKCE)</span>
