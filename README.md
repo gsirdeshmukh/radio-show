@@ -29,6 +29,7 @@ GitHub Pages example (free HTTPS):
 3. Record voice bumpers in **Voice Bites**, then **Add to Show**.
 4. Use fade toggles, per-block volume, start/end trims (sliders + inputs), and audition buttons to shape transitions.
 5. Hit **Play Show** to play every block in order with fades.
+6. Save your show (full or tracks-only) and load in `listener.html` (same site) to play with cover art and now-playing UI.
 
 ### Built-in PKCE auth (no manual token paste)
 - Enter your Spotify app **Client ID** and your registered **Redirect URI** (default is the current page URL).
