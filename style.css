@@ -332,6 +332,15 @@ button:hover:not(:disabled) {
   grid-template-columns: 1fr auto auto;
 }
 
+.panel.show {
+  grid-column: span 2;
+}
+@media (max-width: 900px) {
+  .panel.show {
+    grid-column: span 1;
+  }
+}
+
 .trim {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -353,6 +362,19 @@ button:hover:not(:disabled) {
   width: 100%;
 }
 
+.nudge-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.waveform {
+  width: 100%;
+  height: 60px;
+  background: var(--panel-strong);
+  border: 1px solid var(--grid);
+}
+
 .trim-range {
   grid-column: 1 / -1;
   display: grid;
@@ -362,6 +384,21 @@ button:hover:not(:disabled) {
 
 .trim-range input[type="range"] {
   width: 100%;
+}
+
+.selection-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.selection-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  opacity: 0.6;
 }
 
 .seg-actions {
@@ -437,4 +474,7 @@ button:hover:not(:disabled) {
   .chip-stack {
     flex-wrap: wrap;
   }
+}
+#load-input {
+  display: none;
 }

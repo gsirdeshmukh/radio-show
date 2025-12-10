@@ -61,6 +61,10 @@
     dom.connectToggle = document.getElementById("connect-toggle");
     dom.connectPanel = document.getElementById("connect-panel");
     dom.themeSwitch = document.getElementById("theme-switch");
+    dom.saveShowBtn = document.getElementById("save-show-btn");
+    dom.loadShowBtn = document.getElementById("load-show-btn");
+    dom.saveTracksBtn = document.getElementById("save-tracks-btn");
+    dom.loadInput = document.getElementById("load-input");
   }
 
   function bindEvents() {
@@ -79,6 +83,10 @@
     dom.addRecordingBtn.addEventListener("click", addRecordingToShow);
     dom.playShowBtn.addEventListener("click", playShow);
     dom.stopShowBtn.addEventListener("click", stopShow);
+    dom.saveShowBtn.addEventListener("click", () => exportShow({ tracksOnly: false }));
+    dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
+    dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
+    dom.loadInput.addEventListener("change", handleImport);
     dom.masterVolume.addEventListener("input", (e) => {
       state.masterVolume = Number(e.target.value) / 100;
       if (state.player) {
@@ -148,6 +156,7 @@
     }
     applySavedTheme();
     handlePkceCallback();
+    restoreLocal();
   }, { once: true });
 
   async function connectSpotify() {
@@ -363,8 +372,8 @@
       key: null,
       energy: null,
       uri: track.uri,
-      fadeIn: true,
-      fadeOut: true,
+      fadeIn: false,
+      fadeOut: false,
       volume: state.masterVolume,
     };
     state.segments.push(segment);
@@ -504,8 +513,8 @@
       energy: null,
       blob: state.currentRecording.blob,
       url: state.currentRecording.url,
-      fadeIn: true,
-      fadeOut: true,
+      fadeIn: false,
+      fadeOut: false,
       volume: state.masterVolume,
     };
     state.segments.push(segment);
@@ -609,6 +618,7 @@
         endInput.value = ((segment.endMs ?? segment.duration) / 1000).toString();
         startRange.value = (segment.startMs / 1000).toString();
         endRange.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+        updateFill();
       };
 
       startInput.addEventListener("input", (e) => {
@@ -639,16 +649,86 @@
         renderShowLength();
       });
 
+      const nudgeStart = document.createElement("div");
+      nudgeStart.className = "nudge-row";
+      const startMinus = document.createElement("button");
+      startMinus.className = "ghost small";
+      startMinus.textContent = "−0.5s";
+      startMinus.addEventListener("click", () => {
+        segment.startMs = Math.max(0, segment.startMs - 500);
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+      const startPlus = document.createElement("button");
+      startPlus.className = "ghost small";
+      startPlus.textContent = "+0.5s";
+      startPlus.addEventListener("click", () => {
+        segment.startMs = segment.startMs + 500;
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+      nudgeStart.appendChild(startMinus);
+      nudgeStart.appendChild(startPlus);
+
+      const nudgeEnd = document.createElement("div");
+      nudgeEnd.className = "nudge-row";
+      const endMinus = document.createElement("button");
+      endMinus.className = "ghost small";
+      endMinus.textContent = "−0.5s";
+      endMinus.addEventListener("click", () => {
+        segment.endMs = Math.max(segment.startMs + 500, segment.endMs - 500);
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+      const endPlus = document.createElement("button");
+      endPlus.className = "ghost small";
+      endPlus.textContent = "+0.5s";
+      endPlus.addEventListener("click", () => {
+        segment.endMs = segment.endMs + 500;
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+      nudgeEnd.appendChild(endMinus);
+      nudgeEnd.appendChild(endPlus);
+
       const trimRange = document.createElement("div");
       trimRange.className = "trim-range";
       trimRange.appendChild(startRange);
       trimRange.appendChild(endRange);
 
+      const selection = document.createElement("div");
+      selection.className = "selection-bar";
+      const fill = document.createElement("div");
+      fill.className = "selection-fill";
+      selection.appendChild(fill);
+      const updateFill = () => {
+        const total = segment.duration || 1;
+        const startPct = (segment.startMs / total) * 100;
+        const endPct = (segment.endMs / total) * 100;
+        fill.style.left = `${Math.min(100, Math.max(0, startPct))}%`;
+        fill.style.width = `${Math.min(100, Math.max(0, endPct - startPct))}%`;
+      };
+      updateFill();
+
       startLabel.appendChild(startInput);
+      startLabel.appendChild(nudgeStart);
       endLabel.appendChild(endInput);
+      endLabel.appendChild(nudgeEnd);
       trim.appendChild(startLabel);
       trim.appendChild(endLabel);
       trim.appendChild(trimRange);
+      trim.appendChild(selection);
+
+      if (segment.type === "voice") {
+        const wf = document.createElement("canvas");
+        wf.className = "waveform";
+        trim.appendChild(wf);
+        renderVoiceWaveform(segment, wf);
+      }
 
       controls.appendChild(fadeInToggle);
       controls.appendChild(fadeOutToggle);
@@ -658,7 +738,7 @@
       const moves = document.createElement("div");
       moves.className = "seg-actions";
       const audition = document.createElement("button");
-      audition.textContent = "▶";
+      audition.textContent = "A";
       audition.title = "Audition this segment";
       audition.addEventListener("click", () => previewSegment(segment));
       const auditionStop = document.createElement("button");
@@ -689,6 +769,7 @@
       dom.segments.appendChild(li);
     });
     renderShowLength();
+    persistLocal();
   }
 
   function renderShowLength() {
@@ -955,6 +1036,58 @@
     return candidates.find((c) => window.MediaRecorder && MediaRecorder.isTypeSupported(c));
   }
 
+  async function renderVoiceWaveform(segment, canvas) {
+    try {
+      if (segment.waveformPoints) {
+        drawWaveform(canvas, segment.waveformPoints);
+        return;
+      }
+      const arrayBuf = await segment.blob.arrayBuffer();
+      const audioCtx = getAudioContext();
+      const decoded = await audioCtx.decodeAudioData(arrayBuf.slice(0));
+      const channel = decoded.getChannelData(0);
+      const sampleCount = Math.min(400, Math.floor(channel.length / 50));
+      const points = new Array(sampleCount).fill(0).map((_, i) => {
+        const start = Math.floor((i / sampleCount) * channel.length);
+        const end = Math.floor(((i + 1) / sampleCount) * channel.length);
+        let min = 1;
+        let max = -1;
+        for (let j = start; j < end; j++) {
+          const v = channel[j];
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        return { min, max };
+      });
+      segment.waveformPoints = points;
+      drawWaveform(canvas, points);
+    } catch (err) {
+      console.warn("waveform render failed", err);
+    }
+  }
+
+  function drawWaveform(canvas, points) {
+    const ctx = canvas.getContext("2d");
+    const width = (canvas.width = canvas.clientWidth || 300);
+    const height = (canvas.height = canvas.clientHeight || 60);
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1;
+    const mid = height / 2;
+    ctx.beginPath();
+    const step = width / points.length;
+    points.forEach((p, i) => {
+      const x = i * step;
+      const y1 = mid + p.min * mid;
+      const y2 = mid + p.max * mid;
+      ctx.moveTo(x, y1);
+      ctx.lineTo(x, y2);
+    });
+    ctx.stroke();
+  }
+
   function getSegmentLength(segment) {
     const start = segment.startMs ?? 0;
     const end = segment.endMs ?? segment.duration ?? 0;
@@ -980,6 +1113,108 @@
     const keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     const base = keys[key % 12];
     return mode === 1 ? `${base} major` : `${base} minor`;
+  }
+
+  function exportShow({ tracksOnly }) {
+    const payload = {
+      version: 1,
+      tracksOnly,
+      segments: state.segments.map((s) => {
+        if (tracksOnly && s.type !== "spotify") return null;
+        if (s.type === "voice") {
+          const base64Url = s.blob ? blobToDataUrl(s.blob) : Promise.resolve(s.url);
+          return base64Url.then((url) => ({
+            ...s,
+            blob: undefined,
+            url,
+          }));
+        }
+        return Promise.resolve({ ...s });
+      }).filter(Boolean),
+    };
+    Promise.all(payload.segments).then((segments) => {
+      payload.segments = segments;
+      const dataStr = JSON.stringify(payload);
+      const blob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = tracksOnly ? "radio-show-tracks.json" : "radio-show-full.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  async function handleImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      if (!payload || !Array.isArray(payload.segments)) {
+        alert("Invalid show file.");
+        return;
+      }
+      const segments = await Promise.all(
+        payload.segments.map(async (s) => {
+          if (s.type === "voice" && s.url && !s.blob) {
+            // fetch blob from data URL or remote
+            try {
+              const res = await fetch(s.url);
+              const blob = await res.blob();
+              s.blob = blob;
+            } catch {
+              // leave url; playback will try
+            }
+          }
+          return s;
+        })
+      );
+      state.segments = segments;
+      renderSegments();
+      alert("Show loaded.");
+    } catch (err) {
+      console.error(err);
+      alert("Could not load show file.");
+    } finally {
+      dom.loadInput.value = "";
+    }
+  }
+
+  function persistLocal() {
+    try {
+      const data = state.segments.map((s) => {
+        if (s.type === "voice") {
+          return { ...s, blob: undefined }; // avoid storing blobs
+        }
+        return { ...s };
+      });
+      localStorage.setItem("rs_show_segments", JSON.stringify(data));
+    } catch (err) {
+      console.warn("persist local failed", err);
+    }
+  }
+
+  function restoreLocal() {
+    try {
+      const raw = localStorage.getItem("rs_show_segments");
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data)) return;
+      state.segments = data;
+      renderSegments();
+    } catch (err) {
+      console.warn("restore local failed", err);
+    }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   function uid() {
