@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radio Show — Spotify + Voice</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://sdk.scdn.co/spotify-player.js" async></script>
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="hero">
+    <div class="title-block">
+      <p class="tag">arcade radio lab</p>
+      <h1>RADIO-SHOW</h1>
+      <p class="lede">Stitch Spotify tracks and your voice takes into a broadcast-style set with fades.</p>
+      <div class="status-chip" id="spotify-status">spotify: disconnected</div>
+    </div>
+    <div class="chip-stack">
+      <div class="chip">vocal fader</div>
+      <div class="chip">playlist pilot</div>
+      <div class="chip">minimal + 2d</div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel connect">
+      <div class="panel-head">
+        <h2>Connect</h2>
+        <span class="hint">needs a Spotify OAuth token</span>
+      </div>
+      <label class="field">
+        <span>Client ID (PKCE)</span>
+        <input id="client-id-input" type="text" placeholder="Spotify app client ID" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Redirect URI</span>
+        <input id="redirect-input" type="text" placeholder="https://your-site/callback" autocomplete="off" />
+      </label>
+      <div class="row">
+        <button id="auth-btn" class="primary">Authorize with Spotify (PKCE)</button>
+      </div>
+      <label class="field">
+        <span>OAuth token</span>
+        <input id="token-input" type="password" placeholder="Bearer token with streaming + playback scopes" autocomplete="off" />
+      </label>
+      <div class="row">
+        <button id="connect-btn" class="primary">Connect Player</button>
+        <button id="disconnect-btn" class="ghost">Disconnect</button>
+      </div>
+      <div class="field">
+        <span>Show volume</span>
+        <input id="master-volume" type="range" min="0" max="100" value="80" />
+      </div>
+      <p class="note">Scopes: user-modify-playback-state, streaming, user-read-playback-state. The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
+    </section>
+
+    <section class="panel search">
+      <div class="panel-head">
+        <h2>Find Tracks</h2>
+        <span class="hint">search Spotify</span>
+      </div>
+      <form id="search-form" class="row">
+        <input id="search-input" type="text" placeholder="Search tracks..." autocomplete="off" />
+        <button type="submit" class="primary">Search</button>
+      </form>
+      <ul id="results" class="list"></ul>
+    </section>
+
+    <section class="panel recorder">
+      <div class="panel-head">
+        <h2>Voice Bites</h2>
+        <span class="hint">record in-browser</span>
+      </div>
+      <div class="row wrap">
+        <button id="record-btn" class="primary">Start Recording</button>
+        <button id="stop-record-btn" class="ghost" disabled>Stop</button>
+        <label class="field small">
+          <span>Label</span>
+          <input id="record-label" type="text" placeholder="Voice bumper" />
+        </label>
+        <div class="timer" id="record-timer">00:00</div>
+      </div>
+      <div class="preview" id="record-preview">
+        <p>No recording yet.</p>
+      </div>
+      <button id="add-recording-btn" class="primary wide" disabled>Add to Show</button>
+    </section>
+
+    <section class="panel show">
+      <div class="panel-head">
+        <h2>Show Builder</h2>
+        <span class="hint" id="show-length">0:00</span>
+      </div>
+      <div class="row wrap">
+        <button id="play-show-btn" class="primary">Play Show</button>
+        <button id="stop-show-btn" class="ghost">Stop</button>
+        <label class="field small">
+          <span>Fade (ms)</span>
+          <input id="fade-duration" type="number" min="200" max="4000" step="100" value="1200" />
+        </label>
+      </div>
+      <ul id="segments" class="list segments"></ul>
+    </section>
+
+    <section class="panel tips">
+      <div class="panel-head">
+        <h2>How to Drive</h2>
+      </div>
+      <ol class="steps">
+        <li>Paste a short-lived Spotify OAuth token, connect, and pick <strong>Radio Show Deck</strong> as the active device.</li>
+        <li>Search tracks, click <strong>Add</strong> to drop them into the show.</li>
+        <li>Record voice bumpers, then <strong>Add to Show</strong>. Each block has fade-in/out toggles and its own volume.</li>
+        <li>Hit <strong>Play Show</strong> to roll everything back-to-back with fades.</li>
+      </ol>
+    </section>
+  </main>
+
+  <noscript class="noscript">Enable JavaScript to use the radio builder.</noscript>
+  <script src="app.js" defer></script>
+</body>
+</html>
