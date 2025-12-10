@@ -24,6 +24,7 @@
     previewSegmentId: null,
     tickerTimer: null,
     tickerIndex: 0,
+    recommendations: [],
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -66,6 +67,7 @@
     dom.saveShowBtn = document.getElementById("save-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
     dom.saveTracksBtn = document.getElementById("save-tracks-btn");
+    dom.clearShowBtn = document.getElementById("clear-show-btn");
     dom.loadInput = document.getElementById("load-input");
     dom.sessionTitle = document.getElementById("session-title");
     dom.sessionHost = document.getElementById("session-host");
@@ -83,6 +85,7 @@
     dom.listenProgress = document.getElementById("listen-progress");
     dom.listenTotal = document.getElementById("listen-total");
     dom.multiSeed = document.getElementById("multi-seed");
+    dom.recsList = document.getElementById("recs-list");
   }
 
   function showInlineRecommendations(seedSegment, recs) {
@@ -115,6 +118,7 @@
     menu.appendChild(list);
     host.classList.add("dropdown");
     host.appendChild(menu);
+    menu.addEventListener("click", (e) => e.stopPropagation());
     const close = () => {
       menu.remove();
       host.classList.remove("dropdown");
@@ -146,6 +150,7 @@
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
     dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
     dom.loadInput.addEventListener("change", handleImport);
+    dom.clearShowBtn.addEventListener("click", clearShow);
     dom.listenLoad.addEventListener("click", () => dom.listenFile.click());
     dom.listenFile.addEventListener("change", handleInlineImport);
     dom.listenPlay.addEventListener("click", () => {
@@ -249,6 +254,7 @@
       state.token = storedToken;
     }
     updateListenMeta();
+    renderRecommendations();
   }, { once: true });
 
   async function connectSpotify() {
@@ -437,12 +443,18 @@
     }
     state.searchResults.forEach((track) => {
       const li = document.createElement("li");
-      li.innerHTML = `
-        <div class="meta">
-          <div class="title">${track.name}</div>
-          <div class="subtitle">${track.artists.map((a) => a.name).join(", ")}</div>
-        </div>
-      `;
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = track.name;
+      const sub = document.createElement("div");
+      sub.className = "subtitle";
+      sub.textContent = track.artists.map((a) => a.name).join(", ");
+      meta.appendChild(title);
+      meta.appendChild(sub);
+      li.appendChild(meta);
       const actions = document.createElement("div");
       actions.className = "actions";
       const addBtn = document.createElement("button");
@@ -535,6 +547,8 @@
       const recs = data.tracks || [];
       if (!recs.length) return;
       showInlineRecommendations(track, recs);
+      state.recommendations = recs;
+      renderRecommendations();
     } catch (err) {
       console.error(err);
     }
@@ -925,6 +939,38 @@
     updateListenMeta();
   }
 
+  function renderRecommendations() {
+    if (!dom.recsList) return;
+    dom.recsList.innerHTML = "";
+    if (!state.recommendations.length) {
+      dom.recsList.innerHTML = `<li><div class="meta"><div class="title">No recommendations yet.</div><div class="subtitle">Click Sim on a track to seed.</div></div></li>`;
+      return;
+    }
+    state.recommendations.forEach((track) => {
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = track.name;
+      const sub = document.createElement("div");
+      sub.className = "subtitle";
+      sub.textContent = track.artists.map((a) => a.name).join(", ");
+      meta.appendChild(title);
+      meta.appendChild(sub);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const add = document.createElement("button");
+      add.textContent = "Add";
+      add.className = "primary";
+      add.addEventListener("click", () => addTrackToShow(track));
+      actions.appendChild(add);
+      li.appendChild(meta);
+      li.appendChild(actions);
+      dom.recsList.appendChild(li);
+    });
+  }
+
   function renderShowLength() {
     const total = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0);
     dom.showLength.textContent = formatMs(total);
@@ -976,6 +1022,7 @@
       if (!state.isPlaying) break;
       state.playingIndex = i;
       setTicker(segment);
+      updateListenNow(segment);
       await playSegment(segment);
     }
     state.isPlaying = false;
@@ -1095,12 +1142,12 @@
   async function playSegment(segment) {
     const length = getSegmentLength(segment);
     startListenProgress(length);
+    updateListenNow(segment);
     if (segment.type === "voice") {
       await playVoiceSegment(segment);
     } else {
       await playSpotifySegment(segment);
     }
-    updateListenNow(segment);
     resetListenProgress();
   }
 
@@ -1187,16 +1234,23 @@
     }
 
     return new Promise((resolve) => {
+      const pauseTimer = setTimeout(() => {
+        state.player.pause().catch(() => {});
+        resolve();
+      }, playMs + 100);
+
       const fallback = setTimeout(() => {
         state.player.removeListener("player_state_changed", handler);
+        clearTimeout(pauseTimer);
         resolve();
-      }, playMs + 1500);
+      }, playMs + 2000);
 
       const handler = (s) => {
         if (!s || !s.track_window || !s.track_window.current_track) return;
         const uri = s.track_window.current_track.uri;
         if (uri === segment.uri && s.paused && s.position === 0) {
           clearTimeout(fallback);
+          clearTimeout(pauseTimer);
           state.player.removeListener("player_state_changed", handler);
           resolve();
         }
@@ -1372,6 +1426,7 @@
         })
       );
       state.segments = segments;
+      await ensureAlbumArt(state.segments);
       renderSegments();
       alert("Show loaded.");
     } catch (err) {
@@ -1416,16 +1471,23 @@
     try {
       const raw = localStorage.getItem("rs_show_segments");
       if (!raw) return;
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return;
-    state.segments = data;
-    renderSegments();
-  } catch (err) {
-    console.warn("restore local failed", err);
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data)) return;
+      state.segments = data;
+      ensureAlbumArt(state.segments).finally(() => renderSegments());
+    } catch (err) {
+      console.warn("restore local failed", err);
+    }
   }
-}
 
-function blobToDataUrl(blob) {
+  function clearShow() {
+    if (!confirm("Clear all segments?")) return;
+    state.segments = [];
+    renderSegments();
+    persistLocal();
+  }
+
+  function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
@@ -1459,6 +1521,36 @@ function blobToDataUrl(blob) {
     if (dom.sessionDate.value) bits.push(dom.sessionDate.value);
     dom.listenSubtitle.textContent = bits.join(" · ") || "No session meta";
     dom.listenNote.textContent = "";
+  }
+
+  async function ensureAlbumArt(segments) {
+    if (!state.token) return;
+    const missing = segments.filter(
+      (s) => s.type === "spotify" && (!s.album || !s.album.images || !s.album.images.length)
+    );
+    if (!missing.length) return;
+    const ids = missing
+      .map((s) => getTrackIdFromUri(s.uri))
+      .filter(Boolean)
+      .slice(0, 50);
+    if (!ids.length) return;
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/tracks?ids=${ids.join(",")}`, {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const map = {};
+      (data.tracks || []).forEach((t) => (map[t.id] = t));
+      segments.forEach((s) => {
+        const id = getTrackIdFromUri(s.uri);
+        if (id && map[id]) {
+          s.album = map[id].album;
+        }
+      });
+    } catch (err) {
+      console.warn("album art fetch failed", err);
+    }
   }
 
   function uid() {
