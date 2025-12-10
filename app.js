@@ -19,6 +19,9 @@
     isPlaying: false,
     activeAudio: null,
     audioContext: null,
+    previewTimer: null,
+    previewAudio: null,
+    previewSegmentId: null,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -54,12 +57,17 @@
     dom.playShowBtn = document.getElementById("play-show-btn");
     dom.stopShowBtn = document.getElementById("stop-show-btn");
     dom.fadeDuration = document.getElementById("fade-duration");
+    dom.connectToggle = document.getElementById("connect-toggle");
+    dom.connectPanel = document.getElementById("connect-panel");
+    dom.themeSwitch = document.getElementById("theme-switch");
   }
 
   function bindEvents() {
     dom.authBtn.addEventListener("click", startPkceAuth);
     dom.connectBtn.addEventListener("click", connectSpotify);
     dom.disconnectBtn.addEventListener("click", disconnectSpotify);
+    dom.connectToggle.addEventListener("click", toggleConnectPanel);
+    dom.themeSwitch.addEventListener("click", handleThemeSwitch);
     dom.searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
       runSearch();
@@ -85,6 +93,40 @@
     dom.status.style.color = connected ? "#4cf1c5" : "#f75c87";
   }
 
+  function toggleConnectPanel() {
+    const collapsed = dom.connectPanel.classList.toggle("collapsed");
+    dom.connectToggle.textContent = collapsed ? "Show" : "Hide";
+  }
+
+  function handleThemeSwitch(e) {
+    const btn = e.target.closest(".theme-dot");
+    if (!btn) return;
+    const theme = btn.dataset.theme;
+    applyTheme(theme);
+    sessionStorage.setItem("rs_theme", theme);
+  }
+
+  function applySavedTheme() {
+    const theme = sessionStorage.getItem("rs_theme") || "default";
+    applyTheme(theme);
+  }
+
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    const themes = {
+      default: { accent: "#4cf1c5", accent2: "#f75c87", panel: "#141a27", panelStrong: "#1b2233", bg: "#0e1119" },
+      ember: { accent: "#ff6b3d", accent2: "#fbb13c", panel: "#1c1410", panelStrong: "#281a14", bg: "#0d0907" },
+      sunset: { accent: "#ff8fb1", accent2: "#ff6b6b", panel: "#1d1520", panelStrong: "#251a29", bg: "#100a11" },
+      violet: { accent: "#b388ff", accent2: "#6c63ff", panel: "#141328", panelStrong: "#1c1b35", bg: "#0b0a18" },
+    };
+    const t = themes[theme] || themes.default;
+    root.style.setProperty("--accent", t.accent);
+    root.style.setProperty("--accent-2", t.accent2);
+    root.style.setProperty("--panel", t.panel);
+    root.style.setProperty("--panel-strong", t.panelStrong);
+    root.style.setProperty("--bg", t.bg);
+  }
+
   // Initialize defaults and parse callback params
   document.addEventListener("DOMContentLoaded", () => {
     assignDom();
@@ -102,6 +144,7 @@
       dom.clientIdInput.value = storedClientId;
       state.clientId = storedClientId;
     }
+    applySavedTheme();
     handlePkceCallback();
   }, { once: true });
 
@@ -313,14 +356,39 @@
       subtitle: track.artists.map((a) => a.name).join(", "),
       duration: track.duration_ms,
       startMs: 0,
-      playMs: null,
+      endMs: track.duration_ms,
+      bpm: null,
+      key: null,
+      energy: null,
       uri: track.uri,
       fadeIn: true,
       fadeOut: true,
       volume: state.masterVolume,
     };
     state.segments.push(segment);
+    fetchAudioFeatures(segment);
     renderSegments();
+  }
+
+  async function fetchAudioFeatures(segment) {
+    if (!state.token || segment.type !== "spotify") return;
+    const trackId = getTrackIdFromUri(segment.uri);
+    if (!trackId) return;
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/audio-features?ids=${trackId}`, {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const feat = data?.audio_features?.[0];
+      if (!feat) return;
+      segment.bpm = feat.tempo;
+      segment.key = formatKey(feat.key, feat.mode);
+      segment.energy = feat.energy ? feat.energy.toFixed(2) : null;
+      renderSegments();
+    } catch (err) {
+      console.warn("audio features fetch failed", err);
+    }
   }
 
   async function startRecording() {
@@ -428,7 +496,10 @@
       subtitle: "microphone take",
       duration: state.currentRecording.duration || 1000,
       startMs: 0,
-      playMs: null,
+      endMs: state.currentRecording.duration || 1000,
+      bpm: null,
+      key: null,
+      energy: null,
       blob: state.currentRecording.blob,
       url: state.currentRecording.url,
       fadeIn: true,
@@ -450,6 +521,9 @@
       return;
     }
     state.segments.forEach((segment, index) => {
+      if (segment.endMs == null) {
+        segment.endMs = segment.duration ?? 1000;
+      }
       const li = document.createElement("li");
       const meta = document.createElement("div");
       meta.className = "meta";
@@ -459,7 +533,18 @@
       const subtitle = document.createElement("div");
       subtitle.className = "subtitle";
       const duration = formatMs(getSegmentLength(segment));
-      subtitle.textContent = `${segment.type === "spotify" ? "Spotify" : "Voice"} · ${segment.subtitle || ""} · ${duration}`;
+      const metaBits = [];
+      if (segment.type === "spotify") {
+        metaBits.push("Spotify");
+        if (segment.bpm) metaBits.push(`${Math.round(segment.bpm)} BPM`);
+        if (segment.key) metaBits.push(segment.key);
+        if (segment.energy) metaBits.push(`Energy ${segment.energy}`);
+      } else {
+        metaBits.push("Voice");
+        metaBits.push(segment.subtitle || "");
+      }
+      metaBits.push(duration);
+      subtitle.textContent = metaBits.filter(Boolean).join(" · ");
       meta.appendChild(title);
       meta.appendChild(subtitle);
 
@@ -478,36 +563,106 @@
         segment.volume = Number(e.target.value) / 100;
         renderShowLength();
       });
+      const trim = document.createElement("div");
+      trim.className = "trim";
+      const startLabel = document.createElement("label");
+      startLabel.textContent = "Start (s)";
       const startInput = document.createElement("input");
       startInput.type = "number";
       startInput.min = 0;
       startInput.step = 0.5;
       startInput.value = ((segment.startMs ?? 0) / 1000).toString();
-      startInput.title = "Start offset (seconds)";
+      const endLabel = document.createElement("label");
+      endLabel.textContent = "End (s)";
+      const endInput = document.createElement("input");
+      endInput.type = "number";
+      endInput.min = 0.5;
+      endInput.step = 0.5;
+      endInput.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+
+      const startRange = document.createElement("input");
+      startRange.type = "range";
+      startRange.min = 0;
+      startRange.max = segment.duration / 1000;
+      startRange.step = 0.5;
+      startRange.value = (segment.startMs / 1000).toString();
+
+      const endRange = document.createElement("input");
+      endRange.type = "range";
+      endRange.min = 0.5;
+      endRange.max = segment.duration / 1000;
+      endRange.step = 0.5;
+      endRange.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+
+      const clampTrim = () => {
+        if (segment.endMs <= segment.startMs + 500) {
+          segment.endMs = segment.startMs + 500;
+        }
+        if (segment.endMs > segment.duration) segment.endMs = segment.duration;
+        if (segment.startMs < 0) segment.startMs = 0;
+      };
+
+      const syncInputs = () => {
+        startInput.value = (segment.startMs / 1000).toString();
+        endInput.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+        startRange.value = (segment.startMs / 1000).toString();
+        endRange.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+      };
+
       startInput.addEventListener("input", (e) => {
         segment.startMs = Math.max(0, Number(e.target.value) * 1000);
+        clampTrim();
+        syncInputs();
         renderShowLength();
       });
-      const playInput = document.createElement("input");
-      playInput.type = "number";
-      playInput.min = 0;
-      playInput.step = 0.5;
-      playInput.placeholder = "Full";
-      if (segment.playMs) playInput.value = (segment.playMs / 1000).toString();
-      playInput.title = "Play length (seconds). Leave empty for full length.";
-      playInput.addEventListener("input", (e) => {
-        const val = Number(e.target.value);
-        segment.playMs = Number.isFinite(val) && val > 0 ? val * 1000 : null;
+
+      endInput.addEventListener("input", (e) => {
+        segment.endMs = Number(e.target.value) * 1000;
+        clampTrim();
+        syncInputs();
         renderShowLength();
       });
+
+      startRange.addEventListener("input", (e) => {
+        segment.startMs = Number(e.target.value) * 1000;
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+
+      endRange.addEventListener("input", (e) => {
+        segment.endMs = Number(e.target.value) * 1000;
+        clampTrim();
+        syncInputs();
+        renderShowLength();
+      });
+
+      const trimRange = document.createElement("div");
+      trimRange.className = "trim-range";
+      trimRange.appendChild(startRange);
+      trimRange.appendChild(endRange);
+
+      startLabel.appendChild(startInput);
+      endLabel.appendChild(endInput);
+      trim.appendChild(startLabel);
+      trim.appendChild(endLabel);
+      trim.appendChild(trimRange);
+
       controls.appendChild(fadeInToggle);
       controls.appendChild(fadeOutToggle);
-      controls.appendChild(startInput);
-      controls.appendChild(playInput);
+      controls.appendChild(trim);
       controls.appendChild(volume);
 
       const moves = document.createElement("div");
-      moves.className = "actions";
+      moves.className = "seg-actions";
+      const audition = document.createElement("button");
+      audition.textContent = "▶";
+      audition.title = "Audition this segment";
+      audition.addEventListener("click", () => previewSegment(segment));
+      const auditionStop = document.createElement("button");
+      auditionStop.textContent = "■";
+      auditionStop.title = "Stop audition";
+      auditionStop.addEventListener("click", stopPreview);
       const up = document.createElement("button");
       up.textContent = "▲";
       up.title = "Move up";
@@ -520,6 +675,8 @@
       remove.textContent = "Remove";
       remove.className = "ghost";
       remove.addEventListener("click", () => removeSegment(index));
+      moves.appendChild(audition);
+      moves.appendChild(auditionStop);
       moves.appendChild(up);
       moves.appendChild(down);
       moves.appendChild(remove);
@@ -597,6 +754,62 @@
     }
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
+  }
+
+  function stopPreview() {
+    if (state.previewTimer) {
+      clearTimeout(state.previewTimer);
+      state.previewTimer = null;
+    }
+    if (state.previewAudio) {
+      state.previewAudio.pause();
+      state.previewAudio = null;
+    }
+    if (state.player) {
+      state.player.pause().catch(() => {});
+    }
+    state.previewSegmentId = null;
+  }
+
+  async function previewSegment(segment) {
+    stopShow();
+    stopPreview();
+    state.previewSegmentId = segment.id;
+    const length = getSegmentLength(segment);
+    if (segment.type === "voice") {
+      const audio = new Audio(segment.url);
+      audio.currentTime = (segment.startMs ?? 0) / 1000;
+      audio.volume = segment.volume ?? state.masterVolume;
+      state.previewAudio = audio;
+      audio.play();
+      state.previewTimer = setTimeout(() => {
+        audio.pause();
+        state.previewAudio = null;
+      }, length + 50);
+      return;
+    }
+    if (!state.player || !state.deviceId) {
+      alert("Connect Spotify first.");
+      return;
+    }
+    const startMs = segment.startMs ?? 0;
+    try {
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${state.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
+      });
+      await state.player.setVolume(segment.volume ?? state.masterVolume);
+      state.previewTimer = setTimeout(() => {
+        state.player.pause().catch(() => {});
+      }, length + 50);
+    } catch (err) {
+      console.error(err);
+      alert("Could not audition this segment.");
+    }
   }
 
   async function playSegment(segment) {
@@ -741,8 +954,9 @@
   }
 
   function getSegmentLength(segment) {
-    const baseDuration = Math.max(0, (segment.duration ?? 0) - (segment.startMs ?? 0));
-    const chosen = segment.playMs ?? baseDuration;
+    const start = segment.startMs ?? 0;
+    const end = segment.endMs ?? segment.duration ?? 0;
+    const chosen = Math.max(0, end - start);
     return Math.max(500, chosen); // ensure a minimum length for scheduling
   }
 
@@ -751,6 +965,19 @@
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = String(totalSeconds % 60).padStart(2, "0");
     return `${minutes}:${seconds}`;
+  }
+
+  function getTrackIdFromUri(uri) {
+    if (!uri) return null;
+    const parts = uri.split(":");
+    return parts[2] || null;
+  }
+
+  function formatKey(key, mode) {
+    if (typeof key !== "number" || key < 0) return null;
+    const keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const base = keys[key % 12];
+    return mode === 1 ? `${base} major` : `${base} minor`;
   }
 
   function uid() {

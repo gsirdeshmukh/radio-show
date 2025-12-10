@@ -27,7 +27,7 @@ GitHub Pages example (free HTTPS):
 1. Paste your Spotify OAuth token, click **Connect Player**, and pick the **Radio Show Deck** device in Spotify.
 2. Search for tracks and hit **Add** to drop them into the show.
 3. Record voice bumpers in **Voice Bites**, then **Add to Show**.
-4. Use fade toggles, per-block volume, start offsets, and play lengths to shape transitions.
+4. Use fade toggles, per-block volume, start/end trims (sliders + inputs), and audition buttons to shape transitions.
 5. Hit **Play Show** to play every block in order with fades.
 
 ### Built-in PKCE auth (no manual token paste)
@@ -39,3 +39,5 @@ GitHub Pages example (free HTTPS):
 - Playback uses the Web Playback SDK plus `PUT /v1/me/player/play` to your local device ID.
 - Voice takes are held in memory; reload to clear them.
 - Sharing/export not wired yet—focus is a personal live radio flow for now.
+- Per-track metadata (BPM, key, energy) is fetched via `GET /v1/audio-features` when available.
+- Theme dots in the header let you swap color palettes live.
