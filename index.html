@@ -112,20 +112,12 @@
           <span>Fade (ms)</span>
           <input id="fade-duration" type="number" min="200" max="4000" step="100" value="1200" />
         </label>
+        <button id="save-show-btn" class="ghost">Save Show (full)</button>
+        <button id="load-show-btn" class="ghost">Load Show</button>
+        <button id="save-tracks-btn" class="ghost">Save Tracks Only</button>
+        <input id="load-input" type="file" accept="application/json" style="display:none" />
       </div>
       <ul id="segments" class="list segments"></ul>
-    </section>
-
-    <section class="panel tips">
-      <div class="panel-head">
-        <h2>How to Drive</h2>
-      </div>
-      <ol class="steps">
-        <li>Paste a short-lived Spotify OAuth token, connect, and pick <strong>Radio Show Deck</strong> as the active device.</li>
-        <li>Search tracks, click <strong>Add</strong> to drop them into the show.</li>
-        <li>Record voice bumpers, then <strong>Add to Show</strong>. Each block has fade-in/out toggles and its own volume.</li>
-        <li>Hit <strong>Play Show</strong> to roll everything back-to-back with fades.</li>
-      </ol>
     </section>
   </main>
 
