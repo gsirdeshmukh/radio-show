@@ -353,7 +353,6 @@
   function stopRecording() {
     if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
       state.mediaRecorder.stop();
-      state.mediaRecorder.stream.getTracks().forEach((t) => t.stop());
     }
   }
 
@@ -362,7 +361,15 @@
     dom.recordTimer.textContent = "00:00";
     dom.recordBtn.disabled = false;
     dom.stopRecordBtn.disabled = true;
-    const blob = new Blob(state.recordingChunks, { type: "audio/webm" });
+    const tracks = (state.mediaRecorder && state.mediaRecorder.stream && state.mediaRecorder.stream.getTracks()) || [];
+    tracks.forEach((t) => t.stop());
+    if (!state.recordingChunks.length) {
+      dom.recordPreview.innerHTML = "<p>No audio captured. Try again.</p>";
+      dom.addRecordingBtn.disabled = true;
+      state.currentRecording = null;
+      return;
+    }
+    const blob = new Blob(state.recordingChunks, { type: state.mediaRecorder?.mimeType || "audio/webm" });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     const finalize = async () => {
@@ -393,10 +400,17 @@
       dom.recordPreview.appendChild(audio);
       dom.addRecordingBtn.disabled = false;
     };
+    audio.addEventListener("error", () => {
+      dom.recordPreview.innerHTML = "<p>Could not load recording. Try again.</p>";
+      dom.addRecordingBtn.disabled = true;
+    });
+    audio.load();
     audio.addEventListener("loadedmetadata", finalize);
     if (audio.readyState >= 1) {
       finalize();
     }
+    // reset buffer
+    state.recordingChunks = [];
   }
 
   function updateTimer() {
