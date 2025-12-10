@@ -90,8 +90,12 @@
     assignDom();
     bindEvents();
     setStatus("spotify: disconnected", false);
-    // Default redirect to current origin + path; must match Spotify app setting exactly.
-    state.redirectUri = window.location.origin + window.location.pathname;
+    // Default redirect uses callback.html under the current path to avoid trailing slash mismatches.
+    const basePath = window.location.pathname.endsWith("callback.html")
+      ? window.location.pathname.replace(/callback\.html$/, "")
+      : window.location.pathname;
+    const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
+    state.redirectUri = `${window.location.origin}${normalizedBase}callback.html`;
     dom.redirectInput.value = state.redirectUri;
     const storedClientId = sessionStorage.getItem("rs_client_id");
     if (storedClientId) {
@@ -308,6 +312,8 @@
       title: track.name,
       subtitle: track.artists.map((a) => a.name).join(", "),
       duration: track.duration_ms,
+      startMs: 0,
+      playMs: null,
       uri: track.uri,
       fadeIn: true,
       fadeOut: true,
@@ -320,7 +326,12 @@
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      state.mediaRecorder = new MediaRecorder(stream);
+      const mimeType = pickMimeType();
+      if (!mimeType) {
+        alert("MediaRecorder not supported with a known audio mimeType in this browser.");
+        return;
+      }
+      state.mediaRecorder = new MediaRecorder(stream, { mimeType });
       state.recordingChunks = [];
       state.recordingStart = Date.now();
       dom.recordBtn.disabled = true;
@@ -367,6 +378,9 @@
           console.warn("Could not decode recording duration", err);
         }
       }
+      if (!duration) {
+        duration = 1000; // minimum so it can be added to the show
+      }
       state.currentRecording = { blob, url, duration };
       dom.recordPreview.innerHTML = "";
       const label = dom.recordLabel.value.trim() || "Voice bumper";
@@ -398,7 +412,9 @@
       type: "voice",
       title: label,
       subtitle: "microphone take",
-      duration: state.currentRecording.duration,
+      duration: state.currentRecording.duration || 1000,
+      startMs: 0,
+      playMs: null,
       blob: state.currentRecording.blob,
       url: state.currentRecording.url,
       fadeIn: true,
@@ -428,7 +444,7 @@
       title.textContent = segment.title;
       const subtitle = document.createElement("div");
       subtitle.className = "subtitle";
-      const duration = segment.duration ? formatMs(segment.duration) : "?:??";
+      const duration = formatMs(getSegmentLength(segment));
       subtitle.textContent = `${segment.type === "spotify" ? "Spotify" : "Voice"} · ${segment.subtitle || ""} · ${duration}`;
       meta.appendChild(title);
       meta.appendChild(subtitle);
@@ -446,9 +462,34 @@
       volume.title = "Segment volume";
       volume.addEventListener("input", (e) => {
         segment.volume = Number(e.target.value) / 100;
+        renderShowLength();
+      });
+      const startInput = document.createElement("input");
+      startInput.type = "number";
+      startInput.min = 0;
+      startInput.step = 0.5;
+      startInput.value = ((segment.startMs ?? 0) / 1000).toString();
+      startInput.title = "Start offset (seconds)";
+      startInput.addEventListener("input", (e) => {
+        segment.startMs = Math.max(0, Number(e.target.value) * 1000);
+        renderShowLength();
+      });
+      const playInput = document.createElement("input");
+      playInput.type = "number";
+      playInput.min = 0;
+      playInput.step = 0.5;
+      playInput.placeholder = "Full";
+      if (segment.playMs) playInput.value = (segment.playMs / 1000).toString();
+      playInput.title = "Play length (seconds). Leave empty for full length.";
+      playInput.addEventListener("input", (e) => {
+        const val = Number(e.target.value);
+        segment.playMs = Number.isFinite(val) && val > 0 ? val * 1000 : null;
+        renderShowLength();
       });
       controls.appendChild(fadeInToggle);
       controls.appendChild(fadeOutToggle);
+      controls.appendChild(startInput);
+      controls.appendChild(playInput);
       controls.appendChild(volume);
 
       const moves = document.createElement("div");
@@ -474,7 +515,11 @@
       li.appendChild(moves);
       dom.segments.appendChild(li);
     });
-    const total = state.segments.reduce((sum, s) => sum + (s.duration || 0), 0);
+    renderShowLength();
+  }
+
+  function renderShowLength() {
+    const total = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0);
     dom.showLength.textContent = formatMs(total);
   }
 
@@ -559,22 +604,35 @@
     source.connect(gain).connect(ctx.destination);
     state.activeAudio = audio;
 
+    const startMs = segment.startMs ?? 0;
+    const playMs = getSegmentLength(segment);
+    const playSeconds = playMs / 1000;
+
     if (segment.fadeIn) {
       gain.gain.setValueAtTime(0.001, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + state.fadeMs / 1000);
     }
 
     if (segment.fadeOut) {
-      audio.addEventListener("loadedmetadata", () => {
-        const start = Math.max(0, audio.duration - state.fadeMs / 1000);
-        gain.gain.setValueAtTime(vol, ctx.currentTime + start);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + state.fadeMs / 1000);
+      audio.addEventListener("play", () => {
+        const fadeStart = Math.max(0, playSeconds - state.fadeMs / 1000);
+        gain.gain.setValueAtTime(vol, ctx.currentTime + fadeStart);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + fadeStart + state.fadeMs / 1000);
       });
     }
 
     return new Promise((resolve) => {
+      let stopTimer;
+      audio.addEventListener("play", () => {
+        audio.currentTime = Math.min(audio.duration || 0, startMs / 1000);
+        stopTimer = setTimeout(() => {
+          audio.pause();
+          audio.dispatchEvent(new Event("ended"));
+        }, playMs + 50);
+      }, { once: true });
       audio.addEventListener("ended", () => {
         state.activeAudio = null;
+        if (stopTimer) clearTimeout(stopTimer);
         resolve();
       });
       audio.play();
@@ -589,6 +647,8 @@
     }
     const vol = segment.volume ?? state.masterVolume;
     await state.player.setVolume(segment.fadeIn ? 0.01 : vol);
+    const startMs = segment.startMs ?? 0;
+    const playMs = getSegmentLength(segment);
     try {
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
@@ -596,7 +656,7 @@
           Authorization: `Bearer ${state.token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ uris: [segment.uri] }),
+        body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
       });
     } catch (err) {
       console.error(err);
@@ -609,17 +669,17 @@
       state.player.setVolume(vol);
     }
 
-    if (segment.fadeOut && segment.duration) {
+    if (segment.fadeOut && playMs) {
       setTimeout(() => {
         rampVolume((v) => state.player.setVolume(v), vol, 0.01, state.fadeMs);
-      }, Math.max(0, segment.duration - state.fadeMs));
+      }, Math.max(0, playMs - state.fadeMs));
     }
 
     return new Promise((resolve) => {
       const fallback = setTimeout(() => {
         state.player.removeListener("player_state_changed", handler);
         resolve();
-      }, (segment.duration || 30000) + 1500);
+      }, playMs + 1500);
 
       const handler = (s) => {
         if (!s || !s.track_window || !s.track_window.current_track) return;
@@ -654,6 +714,22 @@
       state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     return state.audioContext;
+  }
+
+  function pickMimeType() {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/mp4",
+    ];
+    return candidates.find((c) => window.MediaRecorder && MediaRecorder.isTypeSupported(c));
+  }
+
+  function getSegmentLength(segment) {
+    const baseDuration = Math.max(0, (segment.duration ?? 0) - (segment.startMs ?? 0));
+    const chosen = segment.playMs ?? baseDuration;
+    return Math.max(500, chosen); // ensure a minimum length for scheduling
   }
 
   function formatMs(ms) {
