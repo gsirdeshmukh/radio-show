@@ -41,6 +41,7 @@
     dom.authBtn = document.getElementById("auth-btn");
     dom.connectBtn = document.getElementById("connect-btn");
     dom.disconnectBtn = document.getElementById("disconnect-btn");
+    dom.connectClose = document.getElementById("connect-close");
     dom.status = document.getElementById("spotify-status");
     dom.masterVolume = document.getElementById("master-volume");
     dom.searchForm = document.getElementById("search-form");
@@ -67,6 +68,7 @@
     dom.connectBtn.addEventListener("click", connectSpotify);
     dom.disconnectBtn.addEventListener("click", disconnectSpotify);
     dom.connectToggle.addEventListener("click", toggleConnectPanel);
+    dom.connectClose.addEventListener("click", toggleConnectPanel);
     dom.themeSwitch.addEventListener("click", handleThemeSwitch);
     dom.searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -95,7 +97,7 @@
 
   function toggleConnectPanel() {
     const collapsed = dom.connectPanel.classList.toggle("collapsed");
-    dom.connectToggle.textContent = collapsed ? "Show" : "Hide";
+    dom.connectToggle.textContent = collapsed ? "Auth Panel" : "Hide Auth";
   }
 
   function handleThemeSwitch(e) {

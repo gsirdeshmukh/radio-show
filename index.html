@@ -18,6 +18,9 @@
       <h1>RADIO-LAB</h1>
       <p class="lede">curate, speak, share.</p>
       <div class="status-chip" id="spotify-status">spotify: disconnected</div>
+      <div class="top-actions">
+        <button id="connect-toggle" class="ghost small">Auth Panel</button>
+      </div>
     </div>
     <div class="chip-stack">
       <!-- <div class="chip">vocal fader</div> -->
@@ -33,11 +36,11 @@
   </header>
 
   <main class="grid">
-    <section class="panel connect" id="connect-panel">
+    <section class="panel connect floating collapsed" id="connect-panel">
       <div class="panel-head">
         <h2>Connect</h2>
         <span class="hint">needs a Spotify OAuth token</span>
-        <button id="connect-toggle" class="ghost small">Hide</button>
+        <button id="connect-close" class="ghost small">Close</button>
       </div>
       <label class="field">
         <span>Client ID (PKCE)</span>
