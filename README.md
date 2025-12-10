@@ -16,18 +16,18 @@ python3 -m http.server 5173
 # then open http://localhost:5173
 ```
 
-**Important:** Your Spotify app’s Redirect URI must exactly match what you use in the UI (default is the page URL, e.g., `http://localhost:5173`). Register that URI in the Spotify dashboard.
+**Important:** Your Spotify app’s Redirect URI must exactly match what you use in the UI. Default is `http://localhost:5173/callback.html` locally or `https://<username>.github.io/radio-show/callback.html` on GitHub Pages. Register the exact URI in the Spotify dashboard.
 
 GitHub Pages example (free HTTPS):
 - Enable Pages for this repo (main branch, `/`), then your app is at `https://<username>.github.io/radio-show/`.
-- Register `https://<username>.github.io/radio-show/` as a Redirect URI. If you prefer a dedicated path, use `https://<username>.github.io/radio-show/callback.html` (a helper is included).
+- Register `https://<username>.github.io/radio-show/callback.html` as a Redirect URI (recommended), or the root if you prefer. A `callback.html` helper is included.
 - In the UI, set Redirect URI to the exact value you registered before clicking **Authorize with Spotify (PKCE)**.
 
 ## Drive the deck
 1. Paste your Spotify OAuth token, click **Connect Player**, and pick the **Radio Show Deck** device in Spotify.
 2. Search for tracks and hit **Add** to drop them into the show.
 3. Record voice bumpers in **Voice Bites**, then **Add to Show**.
-4. Use fade toggles and per-block volume to shape transitions.
+4. Use fade toggles, per-block volume, start offsets, and play lengths to shape transitions.
 5. Hit **Play Show** to play every block in order with fades.
 
 ### Built-in PKCE auth (no manual token paste)
