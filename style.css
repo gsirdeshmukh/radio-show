@@ -314,6 +314,17 @@ button.wide {
   width: 100%;
 }
 
+button.nav-link, .nav-link {
+  text-decoration: none;
+  color: var(--muted);
+  border: 1px dashed var(--grid);
+  padding: 6px 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

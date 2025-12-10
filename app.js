@@ -218,6 +218,9 @@
       alert("Unable to connect Spotify player.");
       return;
     }
+    if (player.activateElement) {
+      player.activateElement().catch(() => {});
+    }
     state.player = player;
   }
 
