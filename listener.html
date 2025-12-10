@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radio-Lab Listener</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://sdk.scdn.co/spotify-player.js" async></script>
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="hero">
+    <div class="title-block">
+      <p class="tag">interplanetary radio show</p>
+      <h1>LISTENER</h1>
+      <p class="lede">Play finished radio shows with cover art, metadata, and comments.</p>
+      <div class="status-chip" id="spotify-status">spotify: disconnected</div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Load Show</h2>
+        <span class="hint">JSON export from builder</span>
+      </div>
+      <div class="row wrap">
+        <label class="field">
+          <span>OAuth token</span>
+          <input id="token-input" type="password" placeholder="Spotify token with streaming scopes" />
+        </label>
+        <button id="connect-btn" class="primary">Connect Player</button>
+        <input id="file-input" type="file" accept="application/json" />
+      </div>
+    </section>
+
+    <section class="panel now">
+      <div class="panel-head">
+        <h2 id="session-title">No show loaded</h2>
+        <span class="hint" id="session-meta"></span>
+      </div>
+      <div class="row wrap">
+        <div class="cover" id="cover"></div>
+        <div class="now-text">
+          <div class="title" id="now-title">—</div>
+          <div class="subtitle" id="now-subtitle">—</div>
+          <div class="subtitle" id="now-note"></div>
+          <div class="progress">
+            <div class="progress-bar"><div id="progress-fill"></div></div>
+            <div class="progress-bar total"><div id="total-fill"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="row wrap">
+        <button id="play-btn" class="primary">Play</button>
+        <button id="stop-btn" class="ghost">Stop</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Segments</h2>
+      </div>
+      <ul id="segments" class="list segments"></ul>
+    </section>
+  </main>
+
+  <script src="listener.js" defer></script>
+</body>
+</html>

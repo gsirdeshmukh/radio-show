@@ -129,6 +129,43 @@ p {
 .theme-dot[data-theme="violet"] { background: linear-gradient(135deg, #b388ff, #6c63ff); }
 .theme-dot[data-theme="default"] { background: linear-gradient(135deg, #4cf1c5, #22c1a3); }
 
+.cover {
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  border: 1px solid var(--grid);
+  background-size: cover;
+  background-position: center;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.progress-bar.total {
+  height: 6px;
+  opacity: 0.7;
+}
+
+.progress-bar div {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--accent);
+  width: 0%;
+}
+
 .grid {
   position: relative;
   z-index: 1;
@@ -360,6 +397,15 @@ button:hover:not(:disabled) {
 
 .trim input[type="number"] {
   width: 100%;
+}
+
+.trim textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px;
+  background: var(--panel-strong);
+  border: 1px solid var(--grid);
+  color: var(--text);
 }
 
 .nudge-row {
