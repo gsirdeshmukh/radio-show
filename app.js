@@ -69,6 +69,7 @@
     dom.sessionHost = document.getElementById("session-host");
     dom.sessionGenre = document.getElementById("session-genre");
     dom.sessionDate = document.getElementById("session-date");
+    dom.ticker = document.getElementById("ticker");
   }
 
   function bindEvents() {
@@ -109,6 +110,13 @@
   function setStatus(text, connected) {
     dom.status.textContent = text;
     dom.status.style.color = connected ? "#4cf1c5" : "#f75c87";
+  }
+
+  function setTicker(segment) {
+    const text = segment
+      ? `now playing: ${segment.title || ""} — ${segment.subtitle || ""}`
+      : "now playing: —";
+    dom.ticker.innerHTML = `<span>${text}</span>`;
   }
 
   function toggleConnectPanel() {
@@ -166,6 +174,11 @@
     handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
+    const storedToken = sessionStorage.getItem("rs_token");
+    if (storedToken) {
+      dom.tokenInput.value = storedToken;
+      state.token = storedToken;
+    }
   }, { once: true });
 
   async function connectSpotify() {
@@ -174,6 +187,7 @@
       alert("Paste a Spotify OAuth token first.");
       return;
     }
+    sessionStorage.setItem("rs_token", state.token);
     await sdkReady;
     if (state.player) {
       state.player.disconnect();
@@ -871,11 +885,13 @@
     await ctx.resume();
     for (const segment of state.segments) {
       if (!state.isPlaying) break;
+      setTicker(segment);
       await playSegment(segment);
     }
     state.isPlaying = false;
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
+    setTicker(null);
   }
 
   function stopShow() {
@@ -889,6 +905,7 @@
     }
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
+    setTicker(null);
   }
 
   function stopPreview() {

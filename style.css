@@ -166,6 +166,35 @@ p {
   width: 0%;
 }
 
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ticker {
+  min-width: 220px;
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 1px dashed var(--grid);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  position: relative;
+}
+
+.ticker span {
+  display: inline-block;
+  animation: marquee 12s linear infinite;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+
 .grid {
   position: relative;
   z-index: 1;
@@ -417,6 +446,13 @@ button:hover:not(:disabled) {
   background: var(--panel-strong);
   border: 1px solid var(--grid);
   color: var(--text);
+}
+
+.trim input[type="date"] {
+  background: var(--panel-strong);
+  border: 1px solid var(--grid);
+  color: var(--text);
+  padding: 8px;
 }
 
 .nudge-row {

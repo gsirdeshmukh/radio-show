@@ -22,6 +22,8 @@
   document.addEventListener("DOMContentLoaded", () => {
     assignDom();
     bindEvents();
+    const storedToken = sessionStorage.getItem("rs_token");
+    if (storedToken) dom.tokenInput.value = storedToken;
   });
 
   function assignDom() {
