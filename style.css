@@ -291,6 +291,7 @@ p {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .hint {
@@ -452,11 +453,29 @@ button:hover:not(:disabled) {
 
 .panel.show {
   grid-column: span 2;
+  order: -2;
 }
 @media (max-width: 900px) {
   .panel.show {
     grid-column: span 1;
   }
+}
+.panel.search {
+  order: -1;
+}
+.panel.recs {
+  min-height: auto;
+  order: 1;
+}
+.panel.recs.empty {
+  display: none;
+}
+.panel.recorder {
+  order: 0;
+}
+.panel.listen {
+  grid-column: 1 / -1;
+  order: 3;
 }
 
 .trim {

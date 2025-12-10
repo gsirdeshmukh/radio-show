@@ -64,6 +64,7 @@
     dom.connectToggle = document.getElementById("connect-toggle");
     dom.connectPanel = document.getElementById("connect-panel");
     dom.themeSwitch = document.getElementById("theme-switch");
+    dom.themeDots = Array.from(document.querySelectorAll(".theme-dot"));
     dom.saveShowBtn = document.getElementById("save-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
     dom.saveTracksBtn = document.getElementById("save-tracks-btn");
@@ -136,7 +137,14 @@
     dom.disconnectBtn.addEventListener("click", disconnectSpotify);
     dom.connectToggle.addEventListener("click", toggleConnectPanel);
     dom.connectClose.addEventListener("click", toggleConnectPanel);
-    dom.themeSwitch.addEventListener("click", handleThemeSwitch);
+    dom.themeSwitch?.addEventListener("click", handleThemeSwitch);
+    dom.themeDots.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const theme = btn.dataset.theme;
+        applyTheme(theme);
+        sessionStorage.setItem("rs_theme", theme);
+      });
+    });
     dom.searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
       runSearch();
@@ -944,8 +952,10 @@
     dom.recsList.innerHTML = "";
     if (!state.recommendations.length) {
       dom.recsList.innerHTML = `<li><div class="meta"><div class="title">No recommendations yet.</div><div class="subtitle">Click Sim on a track to seed.</div></div></li>`;
+      dom.recsList.parentElement.classList.add("empty");
       return;
     }
+    dom.recsList.parentElement.classList.remove("empty");
     state.recommendations.forEach((track) => {
       const li = document.createElement("li");
       const meta = document.createElement("div");

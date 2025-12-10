@@ -31,15 +31,15 @@
       <!-- <div class="chip">minimal + 2d</div> -->
     </div>
     <div class="theme-switch" id="theme-switch">
-      <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
-      <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
-      <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
-      <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
+      <button type="button" class="theme-dot" data-theme="default" title="Aqua">◼</button>
+      <button type="button" class="theme-dot" data-theme="ember" title="Ember">◼</button>
+      <button type="button" class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
+      <button type="button" class="theme-dot" data-theme="violet" title="Violet">◼</button>
     </div>
   </header>
 
   <main class="grid">
-    <section class="panel connect floating collapsed" id="connect-panel">
+    <section class="panel connect floating" id="connect-panel">
       <div class="panel-head">
         <h2>Connect</h2>
         <span class="hint">needs a Spotify OAuth token</span>
@@ -54,15 +54,15 @@
         <input id="redirect-input" type="text" placeholder="https://your-site/callback" autocomplete="off" />
       </label>
       <div class="row">
-        <button id="auth-btn" class="primary">Authorize with Spotify (PKCE)</button>
+        <button id="auth-btn" type="button" class="primary">Authorize with Spotify (PKCE)</button>
       </div>
       <label class="field">
         <span>OAuth token</span>
         <input id="token-input" type="password" placeholder="Bearer token with streaming + playback scopes" autocomplete="off" />
       </label>
       <div class="row">
-        <button id="connect-btn" class="primary">Connect Player</button>
-        <button id="disconnect-btn" class="ghost">Disconnect</button>
+        <button id="connect-btn" type="button" class="primary">Connect Player</button>
+        <button id="disconnect-btn" type="button" class="ghost">Disconnect</button>
       </div>
       <div class="field">
         <span>Show volume</span>
