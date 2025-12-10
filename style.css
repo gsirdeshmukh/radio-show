@@ -166,7 +166,18 @@ p {
 }
 
 .panel.collapsed {
-  padding-bottom: 10px;
+  display: none;
+}
+
+.panel.floating {
+  position: fixed;
+  top: 100px;
+  right: 16px;
+  width: min(420px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  z-index: 20;
+  backdrop-filter: blur(6px);
 }
 .panel-head {
   display: flex;
@@ -314,6 +325,7 @@ button:hover:not(:disabled) {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .segments li {
@@ -322,9 +334,10 @@ button:hover:not(:disabled) {
 
 .trim {
   display: grid;
-  grid-template-columns: repeat(2, minmax(80px, 120px));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
   align-items: end;
+  width: 100%;
 }
 
 .trim label {
@@ -355,6 +368,7 @@ button:hover:not(:disabled) {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .pill {
