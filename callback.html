@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify Redirect</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; background: #0e1119; color: #e9f3ff; }
+  </style>
+</head>
+<body>
+  <p>Finishing sign-in…</p>
+  <script>
+    (function() {
+      const base = window.location.origin + window.location.pathname.replace(/callback\.html$/, "");
+      const next = base + (window.location.search || "") + (window.location.hash || "");
+      window.location.replace(next);
+    })();
+  </script>
+</body>
+</html>
