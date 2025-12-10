@@ -22,6 +22,8 @@
     previewTimer: null,
     previewAudio: null,
     previewSegmentId: null,
+    tickerTimer: null,
+    tickerIndex: 0,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -70,6 +72,58 @@
     dom.sessionGenre = document.getElementById("session-genre");
     dom.sessionDate = document.getElementById("session-date");
     dom.ticker = document.getElementById("ticker");
+    dom.listenFile = document.getElementById("listen-file");
+    dom.listenLoad = document.getElementById("listen-load");
+    dom.listenPlay = document.getElementById("listen-play");
+    dom.listenStop = document.getElementById("listen-stop");
+    dom.listenCover = document.getElementById("listen-cover");
+    dom.listenTitle = document.getElementById("listen-title");
+    dom.listenSubtitle = document.getElementById("listen-subtitle");
+    dom.listenNote = document.getElementById("listen-note");
+    dom.listenProgress = document.getElementById("listen-progress");
+    dom.listenTotal = document.getElementById("listen-total");
+    dom.multiSeed = document.getElementById("multi-seed");
+  }
+
+  function showInlineRecommendations(seedSegment, recs) {
+    const dropdowns = document.querySelectorAll(".dropdown-menu");
+    dropdowns.forEach((d) => d.remove());
+    const segmentEls = Array.from(dom.segments.children);
+    const idx = state.segments.findIndex((s) => s.id === seedSegment.id);
+    const host = segmentEls[idx]?.querySelector(".seg-actions");
+    if (!host) {
+      state.searchResults = recs;
+      renderResults();
+      return;
+    }
+    const menu = document.createElement("div");
+    menu.className = "dropdown-menu";
+    const list = document.createElement("ul");
+    recs.forEach((track) => {
+      const li = document.createElement("li");
+      const title = document.createElement("div");
+      title.className = "subtitle";
+      title.textContent = track.name;
+      const btn = document.createElement("button");
+      btn.textContent = "Add";
+      btn.className = "primary";
+      btn.addEventListener("click", () => addTrackToShow(track));
+      li.appendChild(title);
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+    menu.appendChild(list);
+    host.classList.add("dropdown");
+    host.appendChild(menu);
+    const close = () => {
+      menu.remove();
+      host.classList.remove("dropdown");
+      document.removeEventListener("click", onDoc);
+    };
+    const onDoc = (e) => {
+      if (!menu.contains(e.target)) close();
+    };
+    setTimeout(() => document.addEventListener("click", onDoc), 0);
   }
 
   function bindEvents() {
@@ -92,7 +146,17 @@
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
     dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
     dom.loadInput.addEventListener("change", handleImport);
+    dom.listenLoad.addEventListener("click", () => dom.listenFile.click());
+    dom.listenFile.addEventListener("change", handleInlineImport);
+    dom.listenPlay.addEventListener("click", () => {
+      state.currentIndex = 0;
+      playShow();
+    });
+    dom.listenStop.addEventListener("click", stopShow);
     dom.sessionDate.valueAsDate = new Date();
+    if (!dom.sessionDate.value) {
+      dom.sessionDate.value = new Date().toISOString().slice(0, 10);
+    }
     [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate].forEach((el) => {
       el.addEventListener("input", persistLocal);
     });
@@ -113,10 +177,15 @@
   }
 
   function setTicker(segment) {
-    const text = segment
-      ? `now playing: ${segment.title || ""} — ${segment.subtitle || ""}`
-      : "now playing: —";
-    dom.ticker.innerHTML = `<span>${text}</span>`;
+    const info = segment
+      ? [segment.title || "", segment.subtitle || "", segment.album?.name || ""].filter(Boolean)
+      : ["now playing: —"];
+    if (info.length > 1) {
+      const frames = info.map((t) => `<span>${t}</span>`).join("");
+      dom.ticker.innerHTML = frames;
+    } else {
+      dom.ticker.innerHTML = `<span>${info[0]}</span>`;
+    }
   }
 
   function toggleConnectPanel() {
@@ -179,6 +248,7 @@
       dom.tokenInput.value = storedToken;
       state.token = storedToken;
     }
+    updateListenMeta();
   }, { once: true });
 
   async function connectSpotify() {
@@ -361,11 +431,11 @@
 
   function renderResults() {
     dom.results.innerHTML = "";
-      if (!state.searchResults.length) {
-        dom.results.innerHTML = `<li><div class="meta"><div class="title">No results yet.</div><div class="subtitle">Search for a song.</div></div></li>`;
-        return;
-      }
-      state.searchResults.forEach((track) => {
+    if (!state.searchResults.length) {
+      dom.results.innerHTML = `<li><div class="meta"><div class="title">No results yet.</div><div class="subtitle">Search for a song.</div></div></li>`;
+      return;
+    }
+    state.searchResults.forEach((track) => {
       const li = document.createElement("li");
       li.innerHTML = `
         <div class="meta">
@@ -439,11 +509,23 @@
       alert("Connect with a token first.");
       return;
     }
+    const seeds = [];
+    if (dom.multiSeed?.checked) {
+      // use up to 5 seeds from current segments (spotify tracks only)
+      state.segments
+        .filter((s) => s.type === "spotify")
+        .slice(0, 5)
+        .forEach((s) => {
+          const id = s.id || getTrackIdFromUri(s.uri);
+          if (id && seeds.length < 5) seeds.push(id);
+        });
+    }
     const trackId = track.id || getTrackIdFromUri(track.uri);
-    if (!trackId) return;
+    if (trackId && seeds.length < 5) seeds.push(trackId);
+    if (!seeds.length) return;
     try {
       const res = await fetch(
-        `https://api.spotify.com/v1/recommendations?limit=5&seed_tracks=${trackId}`,
+        `https://api.spotify.com/v1/recommendations?limit=5&seed_tracks=${seeds.join(",")}`,
         {
           headers: { Authorization: `Bearer ${state.token}` },
         }
@@ -452,8 +534,7 @@
       const data = await res.json();
       const recs = data.tracks || [];
       if (!recs.length) return;
-      state.searchResults = recs;
-      renderResults();
+      showInlineRecommendations(track, recs);
     } catch (err) {
       console.error(err);
     }
@@ -811,6 +892,10 @@
       auditionStop.textContent = "■";
       auditionStop.title = "Stop audition";
       auditionStop.addEventListener("click", stopPreview);
+      const similar = document.createElement("button");
+      similar.textContent = "Sim";
+      similar.title = "Find similar tracks";
+      similar.addEventListener("click", () => fetchRecommendations(segment));
       const up = document.createElement("button");
       up.textContent = "▲";
       up.title = "Move up";
@@ -825,6 +910,7 @@
       remove.addEventListener("click", () => removeSegment(index));
       moves.appendChild(audition);
       moves.appendChild(auditionStop);
+      if (segment.type === "spotify") moves.appendChild(similar);
       moves.appendChild(up);
       moves.appendChild(down);
       moves.appendChild(remove);
@@ -836,11 +922,13 @@
     });
     renderShowLength();
     persistLocal();
+    updateListenMeta();
   }
 
   function renderShowLength() {
     const total = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0);
     dom.showLength.textContent = formatMs(total);
+    dom.listenTitle && updateListenMeta();
   }
 
   function checkbox(label, value, onChange) {
@@ -883,8 +971,10 @@
     dom.stopShowBtn.disabled = false;
     const ctx = getAudioContext();
     await ctx.resume();
-    for (const segment of state.segments) {
+    for (let i = 0; i < state.segments.length; i++) {
+      const segment = state.segments[i];
       if (!state.isPlaying) break;
+      state.playingIndex = i;
       setTicker(segment);
       await playSegment(segment);
     }
@@ -906,6 +996,44 @@
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
     setTicker(null);
+    resetListenProgress();
+  }
+
+  function updateListenNow(segment) {
+    if (!dom.listenTitle) return;
+    dom.listenTitle.textContent = segment?.title || "—";
+    dom.listenSubtitle.textContent = `${segment?.type === "spotify" ? "Spotify" : "Voice"} · ${segment?.subtitle || ""}`;
+    dom.listenNote.textContent = segment?.note || "";
+    if (segment?.album?.images?.[0]) {
+      dom.listenCover.style.backgroundImage = `url(${segment.album.images[0].url})`;
+    } else {
+      dom.listenCover.style.backgroundImage = "linear-gradient(120deg, var(--accent), var(--accent-2))";
+    }
+  }
+
+  function resetListenProgress() {
+    if (!dom.listenProgress) return;
+    dom.listenProgress.style.width = "0%";
+    dom.listenTotal.style.width = "0%";
+  }
+
+  function startListenProgress(lengthMs) {
+    if (!dom.listenProgress) return;
+    const totalShow = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0) || 1;
+    const before = state.segments
+      .slice(0, state.playingIndex || 0)
+      .reduce((sum, s) => sum + getSegmentLength(s), 0);
+    const start = performance.now();
+    const step = () => {
+      if (!state.isPlaying) return;
+      const elapsed = performance.now() - start;
+      const segPct = Math.min(100, (elapsed / lengthMs) * 100);
+      const totalPct = Math.min(100, ((before + elapsed) / totalShow) * 100);
+      dom.listenProgress.style.width = `${segPct}%`;
+      dom.listenTotal.style.width = `${totalPct}%`;
+      if (elapsed < lengthMs) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   function stopPreview() {
@@ -965,11 +1093,15 @@
   }
 
   async function playSegment(segment) {
+    const length = getSegmentLength(segment);
+    startListenProgress(length);
     if (segment.type === "voice") {
       await playVoiceSegment(segment);
     } else {
       await playSpotifySegment(segment);
     }
+    updateListenNow(segment);
+    resetListenProgress();
   }
 
   async function playVoiceSegment(segment) {
@@ -1250,6 +1382,13 @@
     }
   }
 
+  async function handleInlineImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await handleImport(e);
+    dom.listenFile.value = "";
+  }
+
   function persistLocal() {
     try {
       localStorage.setItem(
@@ -1308,6 +1447,18 @@ function blobToDataUrl(blob) {
     } catch {
       // ignore
     }
+  }
+
+  function updateListenMeta() {
+    if (!dom.listenTitle) return;
+    if (state.isPlaying) return;
+    dom.listenTitle.textContent = dom.sessionTitle.value || "—";
+    const bits = [];
+    if (dom.sessionHost.value) bits.push(dom.sessionHost.value);
+    if (dom.sessionGenre.value) bits.push(dom.sessionGenre.value);
+    if (dom.sessionDate.value) bits.push(dom.sessionDate.value);
+    dom.listenSubtitle.textContent = bits.join(" · ") || "No session meta";
+    dom.listenNote.textContent = "";
   }
 
   function uid() {
