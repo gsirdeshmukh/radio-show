@@ -1,7 +1,8 @@
 (() => {
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
   const DEFAULT_REDIRECT = "https://gsirdeshmukh.github.io/radio-show/";
-  const SCOPES = ["streaming", "user-modify-playback-state", "user-read-playback-state"].join(" ");
+  const REQUIRED_SCOPES = ["streaming", "user-modify-playback-state", "user-read-playback-state"];
+  const SCOPES = REQUIRED_SCOPES.join(" ");
 
   const state = {
     token: "",
@@ -196,6 +197,7 @@
       state.fadeMs = Number(e.target.value);
     });
     document.addEventListener("keydown", handleHotkeys);
+    dom.status && (dom.status.title = "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state");
   }
 
   function showError(msg) {
@@ -430,6 +432,13 @@
         throw new Error(errText || "Token exchange failed");
       }
       const data = await res.json();
+      const scopeStr = data.scope || "";
+      const granted = scopeStr.split(/\s+/).filter(Boolean);
+      const missing = REQUIRED_SCOPES.filter((s) => !granted.includes(s));
+      if (missing.length) {
+        showError(`Missing scopes: ${missing.join(", ")}. Click Forget Token and re-auth.`);
+        return;
+      }
       state.token = data.access_token;
       dom.tokenInput.value = state.token;
       sessionStorage.setItem("rs_token", state.token);
