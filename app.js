@@ -1,5 +1,6 @@
 (() => {
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
+  const DEFAULT_REDIRECT = "https://gsirdeshmukh.github.io/radio-show/";
   const SCOPES = [
     "streaming",
     "user-modify-playback-state",
@@ -253,12 +254,8 @@
     assignDom();
     bindEvents();
     setStatus("spotify: disconnected", false);
-    // Default redirect uses callback.html under the current path to avoid trailing slash mismatches.
-    const basePath = window.location.pathname.endsWith("callback.html")
-      ? window.location.pathname.replace(/callback\.html$/, "")
-      : window.location.pathname;
-    const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
-    state.redirectUri = `${window.location.origin}${normalizedBase}callback.html`;
+    // Always use the GitHub Pages redirect for PKCE.
+    state.redirectUri = DEFAULT_REDIRECT;
     dom.redirectInput.value = state.redirectUri;
     const storedClientId = sessionStorage.getItem("rs_client_id");
     dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
@@ -349,8 +346,9 @@
   }
 
   async function startPkceAuth() {
-    state.clientId = (dom.clientIdInput.value || "").trim();
-    state.redirectUri = (dom.redirectInput.value || "").trim();
+    state.clientId = (dom.clientIdInput.value || "").trim() || DEFAULT_CLIENT_ID;
+    state.redirectUri = DEFAULT_REDIRECT;
+    dom.redirectInput.value = state.redirectUri;
     if (!state.clientId || !state.redirectUri) {
       alert("Client ID and Redirect URI are required for PKCE.");
       return;
