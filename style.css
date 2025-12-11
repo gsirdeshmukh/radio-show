@@ -352,6 +352,10 @@ button {
   transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.2s ease;
 }
 
+button, input, select, textarea {
+  font-family: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+}
+
 button.primary {
   background: linear-gradient(120deg, var(--accent), #22c1a3);
   color: #05150f;
