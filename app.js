@@ -1314,6 +1314,7 @@
       return;
     }
     state.isPlaying = true;
+    dom.playShowBtn.textContent = "Playing…";
     dom.playShowBtn.disabled = true;
     dom.stopShowBtn.disabled = false;
     const ctx = getAudioContext();
@@ -1327,6 +1328,7 @@
       await playSegment(segment);
     }
     state.isPlaying = false;
+    dom.playShowBtn.textContent = "Play Show";
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
     setTicker(null);
@@ -1349,6 +1351,7 @@
     if (state.overlayRecorder) {
       stopTalkOver();
     }
+    dom.playShowBtn.textContent = "Play Show";
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
     setTicker(null);
