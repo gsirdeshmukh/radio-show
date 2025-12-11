@@ -4,7 +4,7 @@ Minimal, arcade-styled web deck that stitches Spotify tracks with your own voice
 
 ## What you need
 - Spotify Premium account.
-- Short-lived Spotify OAuth token with scopes: `user-modify-playback-state`, `streaming`, `user-read-playback-state`.
+- Short-lived Spotify OAuth token with scopes: `user-modify-playback-state`, `streaming`, `user-read-playback-state`, `user-library-read`, `playlist-read-private`, `playlist-read-collaborative`.
 - Modern desktop browser with mic access.
 
 ## Run it
@@ -32,9 +32,9 @@ GitHub Pages example (free HTTPS):
 6. Save your show (full or tracks-only) and load in `listener.html` (same site) to play with cover art and now-playing UI.
 
 ### Built-in PKCE auth (no manual token paste)
-- Enter your Spotify app **Client ID** and your registered **Redirect URI** (default is the current page URL).
+- Enter your Spotify app **Client ID** (defaults to the bundled demo ID) and your registered **Redirect URI** (default is the current page URL).
 - Click **Authorize with Spotify (PKCE)**; you’ll be redirected to Spotify and back with a token prefilled.
-- Required scopes stay the same: `streaming user-modify-playback-state user-read-playback-state`.
+- Required scopes: `streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative`.
 
 ## Notes
 - Playback uses the Web Playback SDK plus `PUT /v1/me/player/play` to your local device ID.
@@ -42,4 +42,5 @@ GitHub Pages example (free HTTPS):
 - Sharing/export not wired yet—focus is a personal live radio flow for now.
 - Per-track metadata (BPM, key, energy) is fetched via `GET /v1/audio-features` when available.
 - Theme dots in the header let you swap color palettes live.
-- Save/Load: export full shows (with voice clips embedded) or tracks only; load JSON back in. Auto-saves metadata to localStorage.
+- Save/Load: export full shows (with voice clips or uploads embedded as data URLs) or tracks only; load JSON back in. Auto-saves metadata to localStorage.
+- Listener view can pull curated sessions from `sessions/top-sessions.json` (static, same-origin) and features a bottom progress bar with seeking.

@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "tracksOnly": false,
+  "meta": {
+    "title": "Demo Orbit",
+    "host": "Radio-Lab",
+    "genre": "breaks",
+    "date": "2025-01-01"
+  },
+  "segments": [
+    {
+      "id": "demo-track-1",
+      "type": "spotify",
+      "title": "Test Drive",
+      "subtitle": "John Smith",
+      "duration": 180000,
+      "startMs": 0,
+      "endMs": 180000,
+      "bpm": null,
+      "key": null,
+      "energy": null,
+      "note": "Sample session file",
+      "album": {
+        "images": [
+          {
+            "url": "https://i.scdn.co/image/ab67616d0000b27305b7ec3bb8e7b8dc4d1b83b1"
+          }
+        ]
+      },
+      "uri": "spotify:track:11dFghVXANMlKmJXsNCbNl",
+      "fadeIn": false,
+      "fadeOut": false,
+      "volume": 0.8
+    }
+  ]
+}

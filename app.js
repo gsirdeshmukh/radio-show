@@ -1,4 +1,14 @@
 (() => {
+  const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
+  const SCOPES = [
+    "streaming",
+    "user-modify-playback-state",
+    "user-read-playback-state",
+    "user-library-read",
+    "playlist-read-private",
+    "playlist-read-collaborative",
+  ].join(" ");
+
   const state = {
     token: "",
     clientId: "",
@@ -22,6 +32,11 @@
     previewTimer: null,
     previewAudio: null,
     previewSegmentId: null,
+    focusSegmentId: null,
+    overlayRecorder: null,
+    overlayChunks: [],
+    overlaySegment: null,
+    overlayOriginalVolume: null,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -41,11 +56,15 @@
     dom.authBtn = document.getElementById("auth-btn");
     dom.connectBtn = document.getElementById("connect-btn");
     dom.disconnectBtn = document.getElementById("disconnect-btn");
+    dom.forgetTokenBtn = document.getElementById("forget-token-btn");
     dom.connectClose = document.getElementById("connect-close");
     dom.status = document.getElementById("spotify-status");
     dom.masterVolume = document.getElementById("master-volume");
     dom.searchForm = document.getElementById("search-form");
     dom.searchInput = document.getElementById("search-input");
+    dom.libraryBtn = document.getElementById("library-btn");
+    dom.playlistsBtn = document.getElementById("playlists-btn");
+    dom.clearResultsBtn = document.getElementById("clear-results-btn");
     dom.results = document.getElementById("results");
     dom.segments = document.getElementById("segments");
     dom.showLength = document.getElementById("show-length");
@@ -55,6 +74,8 @@
     dom.recordTimer = document.getElementById("record-timer");
     dom.recordPreview = document.getElementById("record-preview");
     dom.addRecordingBtn = document.getElementById("add-recording-btn");
+    dom.uploadBtn = document.getElementById("upload-btn");
+    dom.uploadInput = document.getElementById("upload-input");
     dom.playShowBtn = document.getElementById("play-show-btn");
     dom.stopShowBtn = document.getElementById("stop-show-btn");
     dom.fadeDuration = document.getElementById("fade-duration");
@@ -76,6 +97,7 @@
     dom.authBtn.addEventListener("click", startPkceAuth);
     dom.connectBtn.addEventListener("click", connectSpotify);
     dom.disconnectBtn.addEventListener("click", disconnectSpotify);
+    dom.forgetTokenBtn.addEventListener("click", forgetToken);
     dom.connectToggle.addEventListener("click", toggleConnectPanel);
     dom.connectClose.addEventListener("click", toggleConnectPanel);
     dom.themeSwitch.addEventListener("click", handleThemeSwitch);
@@ -83,9 +105,17 @@
       e.preventDefault();
       runSearch();
     });
+    dom.libraryBtn.addEventListener("click", loadLibraryTracks);
+    dom.playlistsBtn.addEventListener("click", loadPlaylists);
+    dom.clearResultsBtn.addEventListener("click", () => {
+      state.searchResults = [];
+      renderResults();
+    });
     dom.recordBtn.addEventListener("click", startRecording);
     dom.stopRecordBtn.addEventListener("click", stopRecording);
     dom.addRecordingBtn.addEventListener("click", addRecordingToShow);
+    dom.uploadBtn.addEventListener("click", () => dom.uploadInput.click());
+    dom.uploadInput.addEventListener("change", handleUpload);
     dom.playShowBtn.addEventListener("click", playShow);
     dom.stopShowBtn.addEventListener("click", stopShow);
     dom.saveShowBtn.addEventListener("click", () => exportShow({ tracksOnly: false }));
@@ -105,6 +135,7 @@
     dom.fadeDuration.addEventListener("input", (e) => {
       state.fadeMs = Number(e.target.value);
     });
+    document.addEventListener("keydown", handleHotkeys);
   }
 
   function setStatus(text, connected) {
@@ -116,7 +147,10 @@
     const text = segment
       ? `now playing: ${segment.title || ""} — ${segment.subtitle || ""}`
       : "now playing: —";
-    dom.ticker.innerHTML = `<span>${text}</span>`;
+    dom.ticker.innerHTML = "";
+    const span = document.createElement("span");
+    span.textContent = text;
+    dom.ticker.appendChild(span);
   }
 
   function toggleConnectPanel() {
@@ -166,10 +200,8 @@
     state.redirectUri = `${window.location.origin}${normalizedBase}callback.html`;
     dom.redirectInput.value = state.redirectUri;
     const storedClientId = sessionStorage.getItem("rs_client_id");
-    if (storedClientId) {
-      dom.clientIdInput.value = storedClientId;
-      state.clientId = storedClientId;
-    }
+    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
+    state.clientId = dom.clientIdInput.value;
     applySavedTheme();
     handlePkceCallback();
     restoreLocal();
@@ -247,6 +279,13 @@
     setStatus("spotify: disconnected", false);
   }
 
+  function forgetToken() {
+    dom.tokenInput.value = "";
+    sessionStorage.removeItem("rs_token");
+    state.token = "";
+    setStatus("spotify: token cleared", false);
+  }
+
   async function startPkceAuth() {
     state.clientId = (dom.clientIdInput.value || "").trim();
     state.redirectUri = (dom.redirectInput.value || "").trim();
@@ -262,7 +301,7 @@
     sessionStorage.setItem("rs_pkce_state", authState);
     sessionStorage.setItem("rs_pkce_redirect", state.redirectUri);
     sessionStorage.setItem("rs_pkce_client", state.clientId);
-    const scopes = encodeURIComponent("streaming user-modify-playback-state user-read-playback-state");
+    const scopes = encodeURIComponent(SCOPES);
     const redirect = encodeURIComponent(state.redirectUri);
     const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${state.clientId}&scope=${scopes}&redirect_uri=${redirect}&code_challenge_method=S256&code_challenge=${challenge}&state=${authState}&show_dialog=true`;
     window.location.href = url;
@@ -339,7 +378,7 @@
       alert("Connect with a token first.");
       return;
     }
-    dom.results.innerHTML = `<li><div class="meta"><div class="title">Searching…</div></div></li>`;
+    renderStatusResult("Searching…");
     try {
       const res = await fetch(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8`,
@@ -352,41 +391,83 @@
       }
       const data = await res.json();
       state.searchResults = data?.tracks?.items || [];
-      renderResults();
+      renderResults({ label: `Results for “${q}”` });
     } catch (err) {
       console.error(err);
-      dom.results.innerHTML = `<li><div class="meta"><div class="title">Error</div><div class="subtitle">${err.message}</div></div></li>`;
+      renderStatusResult(`Error: ${err.message}`);
     }
   }
 
-  function renderResults() {
+  function renderResults(options = {}) {
+    const label = options.label || "";
     dom.results.innerHTML = "";
-      if (!state.searchResults.length) {
-        dom.results.innerHTML = `<li><div class="meta"><div class="title">No results yet.</div><div class="subtitle">Search for a song.</div></div></li>`;
-        return;
-      }
-      state.searchResults.forEach((track) => {
+    if (label) {
+      const badge = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = label;
+      meta.appendChild(title);
+      badge.appendChild(meta);
+      dom.results.appendChild(badge);
+    }
+    if (!state.searchResults.length) {
+      renderStatusResult("No results yet. Search for a song.");
+      return;
+    }
+    state.searchResults.forEach((track) => {
       const li = document.createElement("li");
-      li.innerHTML = `
-        <div class="meta">
-          <div class="title">${track.name}</div>
-          <div class="subtitle">${track.artists.map((a) => a.name).join(", ")}</div>
-        </div>
-      `;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = track.name;
+      const subtitle = document.createElement("div");
+      subtitle.className = "subtitle";
+      subtitle.textContent = track.playlist
+        ? "Playlist"
+        : track.artists.map((a) => a.name).join(", ");
+      meta.appendChild(title);
+      meta.appendChild(subtitle);
       const actions = document.createElement("div");
       actions.className = "actions";
       const addBtn = document.createElement("button");
-      addBtn.textContent = "Add";
+      addBtn.textContent = track.playlist ? "Playlist" : "Add";
       addBtn.className = "primary";
-      addBtn.addEventListener("click", () => addTrackToShow(track));
+      if (!track.playlist) {
+        addBtn.addEventListener("click", () => addTrackToShow(track));
+      } else {
+        addBtn.disabled = true;
+      }
       const similarBtn = document.createElement("button");
       similarBtn.textContent = "Similar";
-      similarBtn.addEventListener("click", () => fetchRecommendations(track));
+      similarBtn.addEventListener("click", () => {
+        if (track.playlist) {
+          fetchPlaylistRecommendations(track);
+        } else {
+          fetchRecommendations(track);
+        }
+      });
       actions.appendChild(addBtn);
       actions.appendChild(similarBtn);
+      li.appendChild(meta);
       li.appendChild(actions);
       dom.results.appendChild(li);
     });
+  }
+
+  function renderStatusResult(text) {
+    dom.results.innerHTML = "";
+    const li = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = text;
+    meta.appendChild(title);
+    li.appendChild(meta);
+    dom.results.appendChild(li);
   }
 
   function addTrackToShow(track) {
@@ -407,6 +488,7 @@
       fadeIn: false,
       fadeOut: false,
       volume: state.masterVolume,
+      cueMs: 0,
     };
     state.segments.push(segment);
     fetchAudioFeatures(segment);
@@ -456,6 +538,98 @@
       renderResults();
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function fetchPlaylistRecommendations(playlist) {
+    if (!state.token) {
+      alert("Connect with a token first.");
+      return;
+    }
+    if (!playlist.id) {
+      renderStatusResult("Playlist is missing an ID.");
+      return;
+    }
+    renderStatusResult("Pulling seeds from playlist…");
+    try {
+      const res = await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=5`, {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) throw new Error(`Playlist fetch failed (${res.status})`);
+      const data = await res.json();
+      const seeds = (data.items || [])
+        .map((i) => i.track)
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((t) => t.id)
+        .filter(Boolean);
+      if (!seeds.length) {
+        renderStatusResult("Playlist has no playable tracks.");
+        return;
+      }
+      const recRes = await fetch(
+        `https://api.spotify.com/v1/recommendations?limit=8&seed_tracks=${seeds.join(",")}`,
+        { headers: { Authorization: `Bearer ${state.token}` } }
+      );
+      if (!recRes.ok) throw new Error("Recommendations failed");
+      const recData = await recRes.json();
+      state.searchResults = recData.tracks || [];
+      renderResults({ label: `Similar to ${playlist.name}` });
+    } catch (err) {
+      console.error(err);
+      renderStatusResult(`Could not fetch playlist recommendations: ${err.message}`);
+    }
+  }
+
+  async function loadLibraryTracks() {
+    if (!state.token) {
+      alert("Connect with a token first.");
+      return;
+    }
+    renderStatusResult("Loading saved tracks…");
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/tracks?limit=20", {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) throw new Error(`Saved tracks failed (${res.status})`);
+      const data = await res.json();
+      state.searchResults = (data.items || []).map((i) => i.track).filter(Boolean);
+      renderResults({ label: "Saved tracks" });
+    } catch (err) {
+      console.error(err);
+      renderStatusResult(`Could not load saved tracks: ${err.message}`);
+    }
+  }
+
+  async function loadPlaylists() {
+    if (!state.token) {
+      alert("Connect with a token first.");
+      return;
+    }
+    renderStatusResult("Loading your playlists…");
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/playlists?limit=12", {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) throw new Error(`Playlists failed (${res.status})`);
+      const data = await res.json();
+      const items = data.items || [];
+      if (!items.length) {
+        renderStatusResult("No playlists found.");
+        return;
+      }
+      state.searchResults = items.map((pl) => ({
+        id: pl.id,
+        name: pl.name,
+        uri: pl.uri,
+        artists: [{ name: `${pl.tracks.total} tracks` }],
+        album: { images: pl.images || [] },
+        playlist: true,
+      }));
+      renderResults({ label: "Playlists (click Similar to get recs)" });
+    } catch (err) {
+      console.error(err);
+      renderStatusResult(`Could not load playlists: ${err.message}`);
     }
   }
 
@@ -574,12 +748,48 @@
       fadeIn: false,
       fadeOut: false,
       volume: state.masterVolume,
+      cueMs: 0,
     };
     state.segments.push(segment);
     state.currentRecording = null;
     dom.recordPreview.innerHTML = "<p>No recording yet.</p>";
     dom.addRecordingBtn.disabled = true;
     renderSegments();
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const url = URL.createObjectURL(file);
+      const duration = await measureAudioDuration(url, file);
+      const segment = {
+        id: uid(),
+        type: "upload",
+        title: file.name,
+      subtitle: "uploaded audio",
+      duration,
+      startMs: 0,
+      endMs: duration,
+      bpm: null,
+        key: null,
+        energy: null,
+        note: "",
+        blob: file,
+        url,
+      fadeIn: false,
+      fadeOut: false,
+      volume: state.masterVolume,
+      cueMs: 0,
+    };
+      state.segments.push(segment);
+      renderSegments();
+    } catch (err) {
+      console.error(err);
+      alert("Could not read audio file.");
+    } finally {
+      dom.uploadInput.value = "";
+    }
   }
 
   function renderSegments() {
@@ -593,7 +803,16 @@
       if (segment.endMs == null) {
         segment.endMs = segment.duration ?? 1000;
       }
+      if (segment.cueMs == null) {
+        segment.cueMs = segment.startMs ?? 0;
+      }
       const li = document.createElement("li");
+      li.dataset.segmentId = segment.id;
+      li.addEventListener("click", () => {
+        state.focusSegmentId = segment.id;
+        document.querySelectorAll(".segments li").forEach((el) => el.classList.remove("focused"));
+        li.classList.add("focused");
+      });
       const meta = document.createElement("div");
       meta.className = "meta";
       const title = document.createElement("div");
@@ -608,6 +827,9 @@
         if (segment.bpm) metaBits.push(`${Math.round(segment.bpm)} BPM`);
         if (segment.key) metaBits.push(segment.key);
         if (segment.energy) metaBits.push(`Energy ${segment.energy}`);
+      } else if (segment.type === "upload") {
+        metaBits.push("Upload");
+        metaBits.push(segment.subtitle || "");
       } else {
         metaBits.push("Voice");
         metaBits.push(segment.subtitle || "");
@@ -762,15 +984,76 @@
       selection.className = "selection-bar";
       const fill = document.createElement("div");
       fill.className = "selection-fill";
+      const handleStart = document.createElement("div");
+      handleStart.className = "handle start";
+      const handleEnd = document.createElement("div");
+      handleEnd.className = "handle end";
+      const cue = document.createElement("div");
+      cue.className = "cue";
       selection.appendChild(fill);
+      selection.appendChild(handleStart);
+      selection.appendChild(handleEnd);
+      selection.appendChild(cue);
       const updateFill = () => {
         const total = segment.duration || 1;
         const startPct = (segment.startMs / total) * 100;
         const endPct = (segment.endMs / total) * 100;
+        const cuePct = (segment.cueMs / total) * 100;
         fill.style.left = `${Math.min(100, Math.max(0, startPct))}%`;
         fill.style.width = `${Math.min(100, Math.max(0, endPct - startPct))}%`;
+        handleStart.style.left = `${Math.min(100, Math.max(0, startPct))}%`;
+        handleEnd.style.left = `${Math.min(100, Math.max(0, endPct))}%`;
+        cue.style.left = `${Math.min(100, Math.max(0, cuePct))}%`;
       };
       updateFill();
+
+      let drag = null;
+      const onPointerMove = (e) => {
+        if (!drag) return;
+        const rect = selection.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const ms = pct * (segment.duration || 1);
+        if (drag.type === "start") {
+          segment.startMs = Math.min(ms, segment.endMs - 500);
+        } else if (drag.type === "end") {
+          segment.endMs = Math.max(ms, segment.startMs + 500);
+        }
+        clampTrim();
+        syncInputs();
+      };
+      const onPointerUp = () => {
+        drag = null;
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+      };
+      const beginDrag = (type) => {
+        drag = { type };
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      };
+      handleStart.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        beginDrag("start");
+      });
+      handleEnd.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        beginDrag("end");
+      });
+      selection.addEventListener("click", (e) => {
+        const rect = selection.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const ms = pct * (segment.duration || 1);
+        if (e.shiftKey) {
+          segment.startMs = Math.min(ms, segment.endMs - 500);
+        } else if (e.altKey || e.metaKey) {
+          segment.endMs = Math.max(ms, segment.startMs + 500);
+        } else {
+          segment.cueMs = ms;
+          previewSegment(segment, ms);
+        }
+        clampTrim();
+        syncInputs();
+      });
 
       startLabel.appendChild(startInput);
       startLabel.appendChild(nudgeStart);
@@ -804,13 +1087,17 @@
       const moves = document.createElement("div");
       moves.className = "seg-actions";
       const audition = document.createElement("button");
-      audition.textContent = "A";
-      audition.title = "Audition this segment";
-      audition.addEventListener("click", () => previewSegment(segment));
+      audition.textContent = "Cue Play";
+      audition.title = "Audition from cue";
+      audition.addEventListener("click", () => previewSegment(segment, segment.cueMs ?? segment.startMs ?? 0));
       const auditionStop = document.createElement("button");
       auditionStop.textContent = "■";
       auditionStop.title = "Stop audition";
       auditionStop.addEventListener("click", stopPreview);
+      const playFrom = document.createElement("button");
+      playFrom.textContent = "Play From Here";
+      playFrom.title = "Start show from this segment";
+      playFrom.addEventListener("click", () => playShowFrom(index));
       const up = document.createElement("button");
       up.textContent = "▲";
       up.title = "Move up";
@@ -819,14 +1106,25 @@
       down.textContent = "▼";
       down.title = "Move down";
       down.addEventListener("click", () => moveSegment(index, 1));
+      const split = document.createElement("button");
+      split.textContent = "Split";
+      split.title = "Split at cue";
+      split.addEventListener("click", () => splitSegment(segment, index));
+      const talk = document.createElement("button");
+      talk.textContent = state.overlaySegment && state.overlaySegment.id === segment.id ? "Stop Talk" : "Talk-over";
+      talk.title = "Record voice over this track (Cmd+Space)";
+      talk.addEventListener("click", () => toggleTalkOver(segment));
       const remove = document.createElement("button");
       remove.textContent = "Remove";
       remove.className = "ghost";
       remove.addEventListener("click", () => removeSegment(index));
       moves.appendChild(audition);
       moves.appendChild(auditionStop);
+      moves.appendChild(playFrom);
       moves.appendChild(up);
       moves.appendChild(down);
+      moves.appendChild(split);
+      moves.appendChild(talk);
       moves.appendChild(remove);
 
       li.appendChild(meta);
@@ -865,12 +1163,26 @@
     renderSegments();
   }
 
+  function splitSegment(segment, index) {
+    const cue = segment.cueMs ?? segment.startMs ?? 0;
+    const start = segment.startMs ?? 0;
+    const end = segment.endMs ?? segment.duration ?? 0;
+    if (cue <= start + 400 || cue >= end - 400) {
+      alert("Set a cue inside the region (shift-click bar) before splitting.");
+      return;
+    }
+    const first = { ...segment, id: uid(), endMs: cue, cueMs: start };
+    const second = { ...segment, id: uid(), startMs: cue, cueMs: cue };
+    state.segments.splice(index, 1, first, second);
+    renderSegments();
+  }
+
   function removeSegment(index) {
     state.segments.splice(index, 1);
     renderSegments();
   }
 
-  async function playShow() {
+  async function playShow(startIndex = 0) {
     if (!state.segments.length) {
       alert("Build a show first.");
       return;
@@ -883,7 +1195,9 @@
     dom.stopShowBtn.disabled = false;
     const ctx = getAudioContext();
     await ctx.resume();
-    for (const segment of state.segments) {
+    const start = Math.max(0, startIndex || 0);
+    for (let i = start; i < state.segments.length; i++) {
+      const segment = state.segments[i];
       if (!state.isPlaying) break;
       setTicker(segment);
       await playSegment(segment);
@@ -894,6 +1208,11 @@
     setTicker(null);
   }
 
+  function playShowFrom(index) {
+    stopShow();
+    playShow(index);
+  }
+
   function stopShow() {
     state.isPlaying = false;
     if (state.activeAudio) {
@@ -902,6 +1221,9 @@
     }
     if (state.player) {
       state.player.pause().catch(() => {});
+    }
+    if (state.overlayRecorder) {
+      stopTalkOver();
     }
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
@@ -923,14 +1245,21 @@
     state.previewSegmentId = null;
   }
 
-  async function previewSegment(segment) {
+  function getFocusedSegment() {
+    if (!state.focusSegmentId) return null;
+    const index = state.segments.findIndex((s) => s.id === state.focusSegmentId);
+    if (index === -1) return null;
+    return { segment: state.segments[index], index };
+  }
+
+  async function previewSegment(segment, startOverrideMs) {
     stopShow();
     stopPreview();
     state.previewSegmentId = segment.id;
     const length = getSegmentLength(segment);
     if (segment.type === "voice") {
       const audio = new Audio(segment.url);
-      audio.currentTime = (segment.startMs ?? 0) / 1000;
+      audio.currentTime = (startOverrideMs ?? segment.startMs ?? 0) / 1000;
       audio.volume = segment.volume ?? state.masterVolume;
       state.previewAudio = audio;
       audio.play();
@@ -944,7 +1273,7 @@
       alert("Connect Spotify first.");
       return;
     }
-    const startMs = segment.startMs ?? 0;
+    const startMs = startOverrideMs ?? segment.startMs ?? 0;
     try {
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
@@ -1095,6 +1424,111 @@
     return state.audioContext;
   }
 
+  async function toggleTalkOver(segment) {
+    if (state.overlayRecorder && state.overlaySegment && state.overlaySegment.id === segment.id) {
+      await stopTalkOver();
+      return;
+    }
+    if (state.overlayRecorder) {
+      await stopTalkOver();
+    }
+    await startTalkOver(segment);
+  }
+
+  async function startTalkOver(segment) {
+    if (segment.type === "spotify" && !state.token) {
+      alert("Connect Spotify first.");
+      return;
+    }
+    const mimeType = pickMimeType();
+    if (!mimeType || !navigator.mediaDevices?.getUserMedia) {
+      alert("Mic recording not supported.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType });
+      state.overlayRecorder = recorder;
+      state.overlayChunks = [];
+      state.overlaySegment = segment;
+      const targetVol = (segment.volume ?? state.masterVolume) * 0.3;
+      state.overlayOriginalVolume = segment.volume ?? state.masterVolume;
+      if (segment.type === "spotify" && state.player && state.deviceId) {
+        await state.player.setVolume(targetVol).catch(() => {});
+        const startMs = segment.cueMs ?? segment.startMs ?? 0;
+        await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${state.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
+        });
+      }
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) state.overlayChunks.push(e.data);
+      };
+      recorder.onstop = async () => {
+        const tracks = (recorder.stream && recorder.stream.getTracks()) || [];
+        tracks.forEach((t) => t.stop());
+        if (!state.overlayChunks.length) {
+          await restoreOverlayVolume();
+          state.overlayRecorder = null;
+          state.overlaySegment = null;
+          return;
+        }
+        const blob = new Blob(state.overlayChunks, { type: recorder.mimeType });
+        const url = URL.createObjectURL(blob);
+        const duration = await measureAudioDuration(url, blob);
+        const voiceSeg = {
+          id: uid(),
+          type: "voice",
+          title: `Host over ${segment.title || "track"}`,
+          subtitle: "talk-over",
+          duration,
+          startMs: 0,
+          endMs: duration,
+          bpm: null,
+          key: null,
+          energy: null,
+          note: "Live host overlay",
+          blob,
+          url,
+          fadeIn: false,
+          fadeOut: false,
+          volume: 1,
+          cueMs: 0,
+        };
+        const idx = state.segments.findIndex((s) => s.id === segment.id);
+        state.segments.splice(idx + 1, 0, voiceSeg);
+        await restoreOverlayVolume();
+        state.overlayRecorder = null;
+        state.overlaySegment = null;
+        renderSegments();
+      };
+      recorder.start();
+    } catch (err) {
+      console.error(err);
+      alert("Could not start talk-over.");
+    }
+  }
+
+  async function stopTalkOver() {
+    if (!state.overlayRecorder) return;
+    try {
+      state.overlayRecorder.stop();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function restoreOverlayVolume() {
+    if (state.player && state.overlayOriginalVolume != null) {
+      await state.player.setVolume(state.overlayOriginalVolume).catch(() => {});
+    }
+    state.overlayOriginalVolume = null;
+  }
+
   function pickMimeType() {
     const candidates = [
       "audio/webm;codecs=opus",
@@ -1157,6 +1591,41 @@
     ctx.stroke();
   }
 
+  async function measureAudioDuration(url, file) {
+    const audio = new Audio(url);
+    const mimeType = file?.type;
+    return new Promise((resolve, reject) => {
+      const finalize = (duration) => resolve(Math.round((duration || 1) * 1000));
+      audio.addEventListener("loadedmetadata", () => {
+        if (audio.duration) {
+          finalize(audio.duration);
+        }
+      });
+      audio.addEventListener("error", async () => {
+        try {
+          const arrayBuf = await file.arrayBuffer();
+          const decoded = await getAudioContext().decodeAudioData(arrayBuf.slice(0));
+          finalize(decoded.duration);
+        } catch (err) {
+          reject(err);
+        }
+      });
+      audio.load();
+      // Safari sometimes never fires error; fallback decode
+      setTimeout(async () => {
+        if (!audio.duration && file) {
+          try {
+            const arrayBuf = await file.arrayBuffer();
+            const decoded = await getAudioContext().decodeAudioData(arrayBuf.slice(0));
+            finalize(decoded.duration);
+          } catch (err) {
+            reject(err);
+          }
+        }
+      }, 500);
+    });
+  }
+
   function getSegmentLength(segment) {
     const start = segment.startMs ?? 0;
     const end = segment.endMs ?? segment.duration ?? 0;
@@ -1184,13 +1653,38 @@
     return mode === 1 ? `${base} major` : `${base} minor`;
   }
 
+  function handleHotkeys(e) {
+    const tag = (e.target?.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea") return;
+    if (e.metaKey && e.code === "Space") {
+      const focus = getFocusedSegment();
+      if (focus) {
+        e.preventDefault();
+        toggleTalkOver(focus.segment);
+      }
+    }
+    if (!e.metaKey && !e.ctrlKey && e.key?.toLowerCase() === "s") {
+      const focus = getFocusedSegment();
+      if (focus) {
+        e.preventDefault();
+        splitSegment(focus.segment, focus.index);
+      }
+    }
+  }
+
   function exportShow({ tracksOnly }) {
     const payload = {
-      version: 1,
+      version: 2,
       tracksOnly,
+      meta: {
+        title: dom.sessionTitle.value,
+        host: dom.sessionHost.value,
+        genre: dom.sessionGenre.value,
+        date: dom.sessionDate.value,
+      },
       segments: state.segments.map((s) => {
         if (tracksOnly && s.type !== "spotify") return null;
-        if (s.type === "voice") {
+        if (s.type === "voice" || s.type === "upload") {
           const base64Url = s.blob ? blobToDataUrl(s.blob) : Promise.resolve(s.url);
           return base64Url.then((url) => ({
             ...s,
@@ -1224,22 +1718,35 @@
         alert("Invalid show file.");
         return;
       }
-      const segments = await Promise.all(
-        payload.segments.map(async (s) => {
-          if (s.type === "voice" && s.url && !s.blob) {
-            // fetch blob from data URL or remote
-            try {
-              const res = await fetch(s.url);
-              const blob = await res.blob();
-              s.blob = blob;
-            } catch {
-              // leave url; playback will try
+      const segments = (
+        await Promise.all(
+          payload.segments.map(async (s) => {
+            if ((s.type === "voice" || s.type === "upload") && s.url && !s.blob) {
+              const safe = isSafeLocalUrl(s.url);
+              if (safe) {
+                try {
+                  const res = await fetch(s.url);
+                  if (res.ok) {
+                    s.blob = await res.blob();
+                  }
+                } catch {
+                  // ignore fetch errors; url will be used directly on play
+                }
+              } else {
+                console.warn("Skipping external audio fetch for safety", s.url);
+              }
             }
-          }
-          return s;
-        })
-      );
+            return s;
+          })
+        )
+      ).filter(Boolean);
       state.segments = segments;
+      if (payload.meta) {
+        dom.sessionTitle.value = payload.meta.title || "";
+        dom.sessionHost.value = payload.meta.host || "";
+        dom.sessionGenre.value = payload.meta.genre || "";
+        if (payload.meta.date) dom.sessionDate.value = payload.meta.date;
+      }
       renderSegments();
       alert("Show loaded.");
     } catch (err) {
@@ -1262,7 +1769,7 @@
         })
       );
       const data = state.segments.map((s) => {
-        if (s.type === "voice") {
+        if (s.type === "voice" || s.type === "upload") {
           return { ...s, blob: undefined }; // avoid storing blobs
         }
         return { ...s };
@@ -1293,6 +1800,17 @@ function blobToDataUrl(blob) {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  function isSafeLocalUrl(url) {
+    if (!url) return false;
+    if (url.startsWith("data:")) return true;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.origin === window.location.origin;
+    } catch {
+      return false;
+    }
   }
 
   function hydrateSessionFields() {

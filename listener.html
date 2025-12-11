@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio-Lab Listener</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src https://api.spotify.com https://accounts.spotify.com 'self'; img-src 'self' data: https://i.scdn.co; media-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="no-referrer" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://sdk.scdn.co/spotify-player.js" async></script>
 </head>
@@ -48,10 +50,6 @@
           <div class="title" id="now-title">—</div>
           <div class="subtitle" id="now-subtitle">—</div>
           <div class="subtitle" id="now-note"></div>
-          <div class="progress">
-            <div class="progress-bar"><div id="progress-fill"></div></div>
-            <div class="progress-bar total"><div id="total-fill"></div></div>
-          </div>
         </div>
       </div>
       <div class="row wrap">
@@ -62,12 +60,38 @@
 
     <section class="panel">
       <div class="panel-head">
+        <h2>Top Sessions</h2>
+        <span class="hint">static JSON catalog</span>
+      </div>
+      <div class="row wrap">
+        <button id="refresh-top-btn" class="ghost small">Refresh</button>
+        <input id="session-search" type="text" placeholder="Filter sessions..." />
+      </div>
+      <ul id="top-sessions" class="list"></ul>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
         <h2>Segments</h2>
       </div>
       <ul id="segments" class="list segments"></ul>
     </section>
   </main>
 
+  <div class="listen-bar" id="listen-bar">
+    <div class="bar-cover" id="bar-cover"></div>
+    <div class="bar-meta">
+      <div class="bar-title" id="bar-title">—</div>
+      <div class="bar-subtitle" id="bar-subtitle">—</div>
+    </div>
+    <div class="bar-controls">
+      <button id="bar-play" class="ghost small">Play</button>
+      <button id="bar-stop" class="ghost small">Stop</button>
+    </div>
+    <div class="bar-progress" id="bar-progress">
+      <div class="bar-progress-fill" id="bar-progress-fill"></div>
+    </div>
+  </div>
   <script src="listener.js" defer></script>
 </body>
 </html>
