@@ -888,10 +888,32 @@
       }
       const li = document.createElement("li");
       li.dataset.segmentId = segment.id;
+      li.draggable = true;
       li.addEventListener("click", () => {
         state.focusSegmentId = segment.id;
         document.querySelectorAll(".segments li").forEach((el) => el.classList.remove("focused"));
         li.classList.add("focused");
+      });
+      li.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(index));
+        li.classList.add("dragging");
+      });
+      li.addEventListener("dragend", () => li.classList.remove("dragging"));
+      li.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      });
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData("text/plain"));
+        const to = index;
+        if (Number.isNaN(from) || from === to) return;
+        const list = [...state.segments];
+        const [item] = list.splice(from, 1);
+        list.splice(to, 0, item);
+        state.segments = list;
+        renderSegments();
       });
       const meta = document.createElement("div");
       meta.className = "meta";
@@ -1166,6 +1188,10 @@
 
       const moves = document.createElement("div");
       moves.className = "seg-actions";
+      const dragHandle = document.createElement("span");
+      dragHandle.className = "drag-handle";
+      dragHandle.textContent = "☰";
+      dragHandle.title = "Drag to reorder";
       const audition = document.createElement("button");
       audition.textContent = "Cue Play";
       audition.title = "Audition from cue";
@@ -1201,6 +1227,7 @@
       moves.appendChild(down);
       moves.appendChild(talk);
       moves.appendChild(remove);
+      moves.appendChild(dragHandle);
 
       li.appendChild(meta);
       li.appendChild(controls);
@@ -1221,10 +1248,11 @@
   function checkbox(label, value, onChange) {
     const btn = document.createElement("button");
     btn.className = value ? "primary" : "ghost";
-    btn.textContent = label;
+    btn.textContent = value ? `${label} (on)` : `${label} (off)`;
     btn.addEventListener("click", () => {
       const next = !btn.classList.contains("primary");
       btn.className = next ? "primary" : "ghost";
+      btn.textContent = next ? `${label} (on)` : `${label} (off)`;
       onChange(next);
     });
     return btn;

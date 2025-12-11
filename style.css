@@ -441,6 +441,14 @@ button:hover:not(:disabled) {
 .segments li.active {
   outline: 1px solid var(--accent);
 }
+.segments li .drag-handle {
+  cursor: grab;
+  font-size: 14px;
+  color: var(--muted);
+}
+.segments li.dragging {
+  opacity: 0.6;
+}
 
 .panel.show {
   grid-column: span 2;
