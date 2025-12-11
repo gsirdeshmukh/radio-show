@@ -25,6 +25,7 @@ body {
   color: var(--text);
   min-height: 100vh;
   padding: 28px;
+  padding-bottom: 104px;
   line-height: 1.6;
 }
 
@@ -274,16 +275,6 @@ p {
   display: none;
 }
 
-.panel.floating {
-  position: fixed;
-  top: 100px;
-  right: 16px;
-  width: min(420px, 90vw);
-  max-height: 80vh;
-  overflow: auto;
-  z-index: 20;
-  backdrop-filter: blur(6px);
-}
 .panel-head {
   display: flex;
   align-items: center;
@@ -456,6 +447,13 @@ button:hover:not(:disabled) {
     grid-column: span 1;
   }
 }
+.panel.listen {
+  grid-column: 1 / -1;
+  order: 5;
+}
+.panel.connect {
+  order: -2;
+}
 
 .trim {
   display: grid;
@@ -531,6 +529,29 @@ button:hover:not(:disabled) {
   bottom: 0;
   background: var(--accent);
   opacity: 0.6;
+}
+
+.selection-bar .handle {
+  position: absolute;
+  top: -4px;
+  width: 10px;
+  height: 14px;
+  background: var(--accent-2);
+  border: 1px solid var(--grid);
+  transform: translateX(-50%);
+  cursor: ew-resize;
+}
+
+.selection-bar .cue {
+  position: absolute;
+  top: -6px;
+  width: 2px;
+  height: 18px;
+  background: var(--muted);
+}
+
+.segments li.focused {
+  outline: 1px solid var(--accent);
 }
 
 .seg-actions {
@@ -626,6 +647,71 @@ button:hover:not(:disabled) {
   background: #ffd166;
   padding: 10px;
   margin-top: 16px;
+}
+
+.listen-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(10, 12, 18, 0.9);
+  border-top: 1px solid var(--grid);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+
+.bar-cover {
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--grid);
+}
+
+.bar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bar-title {
+  font-weight: 700;
+}
+
+.bar-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bar-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bar-progress {
+  grid-column: 1 / -1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.bar-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.08s linear;
 }
 
 @media (max-width: 760px) {

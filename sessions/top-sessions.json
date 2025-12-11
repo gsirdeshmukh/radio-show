@@ -1,0 +1,12 @@
+{
+  "sessions": [
+    {
+      "title": "Demo Orbit",
+      "host": "Radio-Lab",
+      "downloads": 12,
+      "url": "sessions/demo-session.json",
+      "genre": "breaks",
+      "tags": ["demo", "spotify"]
+    }
+  ]
+}

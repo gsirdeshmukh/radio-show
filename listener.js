@@ -10,6 +10,13 @@
     audioContext: null,
     currentIndex: 0,
     showMeta: {},
+    topSessions: [],
+    segmentStartTs: 0,
+    segmentLengthMs: 0,
+    segmentStopTimer: null,
+    segmentStopHandler: null,
+    currentSegment: null,
+    progressRaf: null,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -24,6 +31,7 @@
     bindEvents();
     const storedToken = sessionStorage.getItem("rs_token");
     if (storedToken) dom.tokenInput.value = storedToken;
+    loadTopSessions();
   });
 
   function assignDom() {
@@ -35,13 +43,21 @@
     dom.nowSubtitle = document.getElementById("now-subtitle");
     dom.nowNote = document.getElementById("now-note");
     dom.cover = document.getElementById("cover");
-    dom.progressFill = document.getElementById("progress-fill");
-    dom.totalFill = document.getElementById("total-fill");
     dom.playBtn = document.getElementById("play-btn");
     dom.stopBtn = document.getElementById("stop-btn");
     dom.segments = document.getElementById("segments");
     dom.sessionTitle = document.getElementById("session-title");
     dom.sessionMeta = document.getElementById("session-meta");
+    dom.refreshTopBtn = document.getElementById("refresh-top-btn");
+    dom.sessionSearch = document.getElementById("session-search");
+    dom.topSessions = document.getElementById("top-sessions");
+    dom.barCover = document.getElementById("bar-cover");
+    dom.barTitle = document.getElementById("bar-title");
+    dom.barSubtitle = document.getElementById("bar-subtitle");
+    dom.barPlay = document.getElementById("bar-play");
+    dom.barStop = document.getElementById("bar-stop");
+    dom.barProgress = document.getElementById("bar-progress");
+    dom.barProgressFill = document.getElementById("bar-progress-fill");
   }
 
   function bindEvents() {
@@ -49,6 +65,11 @@
     dom.fileInput.addEventListener("change", handleFile);
     dom.playBtn.addEventListener("click", playShow);
     dom.stopBtn.addEventListener("click", stopShow);
+    dom.refreshTopBtn.addEventListener("click", loadTopSessions);
+    dom.sessionSearch.addEventListener("input", () => renderTopSessions(dom.sessionSearch.value));
+    dom.barPlay.addEventListener("click", playShow);
+    dom.barStop.addEventListener("click", stopShow);
+    dom.barProgress.addEventListener("click", handleSeek);
   }
 
   function setStatus(text, connected) {
@@ -92,24 +113,7 @@
     const text = await file.text();
     try {
       const data = JSON.parse(text);
-      if (!data.segments) throw new Error("Invalid file");
-      state.segments = await Promise.all(
-        data.segments.map(async (s) => {
-          if (s.type === "voice" && s.url && !s.blob) {
-            try {
-              const res = await fetch(s.url);
-              s.blob = await res.blob();
-            } catch {
-              // leave url
-            }
-          }
-          return s;
-        })
-      );
-      state.showMeta = data.meta || {};
-      state.currentIndex = 0;
-      renderList();
-      renderMeta();
+      await ingestShowData(data);
     } catch (err) {
       alert("Could not parse file.");
     }
@@ -124,6 +128,110 @@
     dom.sessionMeta.textContent = bits.join(" · ");
   }
 
+  async function ingestShowData(data) {
+    if (!data || !Array.isArray(data.segments)) throw new Error("Invalid file");
+    const segments = (
+      await Promise.all(
+        data.segments.map(async (s) => {
+          if ((s.type === "voice" || s.type === "upload") && s.url && !s.blob && isSafeSessionUrl(s.url)) {
+            try {
+              const res = await fetch(s.url);
+              if (res.ok) s.blob = await res.blob();
+            } catch {
+              // leave url
+            }
+          }
+          return s;
+        })
+      )
+    ).filter(Boolean);
+    state.segments = segments;
+    state.showMeta = data.meta || {};
+    state.currentIndex = 0;
+    renderList();
+    renderMeta();
+  }
+
+  async function loadTopSessions() {
+    try {
+      const res = await fetch("sessions/top-sessions.json", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.topSessions = Array.isArray(data.sessions) ? data.sessions : [];
+      renderTopSessions(dom.sessionSearch.value);
+    } catch (err) {
+      state.topSessions = [];
+      dom.topSessions.innerHTML = "";
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = `Top sessions unavailable (${err.message})`;
+      meta.appendChild(title);
+      li.appendChild(meta);
+      dom.topSessions.appendChild(li);
+    }
+  }
+
+  function renderTopSessions(filter = "") {
+    dom.topSessions.innerHTML = "";
+    const term = (filter || "").toLowerCase();
+    const rows = state.topSessions.filter((s) => {
+      if (!term) return true;
+      return (s.title || "").toLowerCase().includes(term) || (s.host || "").toLowerCase().includes(term);
+    });
+    if (!rows.length) {
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = "No sessions found.";
+      meta.appendChild(title);
+      li.appendChild(meta);
+      dom.topSessions.appendChild(li);
+      return;
+    }
+    rows.forEach((row) => {
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = row.title;
+      const sub = document.createElement("div");
+      sub.className = "subtitle";
+      sub.textContent = `${row.host || "Unknown"} · ${row.downloads || 0} pulls`;
+      meta.appendChild(title);
+      meta.appendChild(sub);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const loadBtn = document.createElement("button");
+      loadBtn.textContent = "Load";
+      loadBtn.addEventListener("click", () => loadSessionFromUrl(row.url));
+      actions.appendChild(loadBtn);
+      li.appendChild(meta);
+      li.appendChild(actions);
+      dom.topSessions.appendChild(li);
+    });
+  }
+
+  async function loadSessionFromUrl(url) {
+    try {
+      if (!isSafeSessionUrl(url)) {
+        alert("Only same-site session files are allowed.");
+        return;
+      }
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      await ingestShowData(data);
+    } catch (err) {
+      alert(`Could not load session: ${err.message}`);
+    }
+  }
+
   function renderList() {
     dom.segments.innerHTML = "";
     state.segments.forEach((s, idx) => {
@@ -135,7 +243,8 @@
       title.textContent = s.title;
       const sub = document.createElement("div");
       sub.className = "subtitle";
-      sub.textContent = `${s.type === "spotify" ? "Spotify" : "Voice"} · ${formatMs(getSegmentLength(s))}`;
+      const kind = s.type === "spotify" ? "Spotify" : s.type === "upload" ? "Upload" : "Voice";
+      sub.textContent = `${kind} · ${formatMs(getSegmentLength(s))}`;
       meta.appendChild(title);
       meta.appendChild(sub);
       if (s.note) {
@@ -187,11 +296,18 @@
     if (state.player) {
       state.player.pause().catch(() => {});
     }
+    clearTimeout(state.segmentStopTimer);
+    state.segmentStopTimer = null;
+    state.segmentStopHandler = null;
+    state.currentSegment = null;
+    if (state.progressRaf) cancelAnimationFrame(state.progressRaf);
+    if (dom.barProgressFill) dom.barProgressFill.style.width = "0%";
   }
 
   async function playSegment(segment) {
     updateNowPlaying(segment);
     const length = getSegmentLength(segment);
+    startSegmentProgress(segment, length);
     if (segment.type === "voice") {
       await playVoice(segment, length);
       return;
@@ -206,20 +322,26 @@
     }
     state.activeAudio = audio;
     return new Promise((resolve) => {
-      let timer;
-      audio.addEventListener("play", () => {
-        audio.currentTime = (segment.startMs ?? 0) / 1000;
-        timer = setTimeout(() => {
-          audio.pause();
-          audio.dispatchEvent(new Event("ended"));
-        }, length + 50);
-      }, { once: true });
-      audio.addEventListener("ended", () => {
-        if (timer) clearTimeout(timer);
+      const finish = () => {
+        clearTimeout(state.segmentStopTimer);
+        state.segmentStopHandler = null;
+        state.activeAudio = null;
         resolve();
-      });
+      };
+      state.segmentStopHandler = () => {
+        audio.pause();
+        finish();
+      };
+      audio.addEventListener("ended", finish, { once: true });
+      audio.addEventListener(
+        "play",
+        () => {
+          audio.currentTime = (segment.startMs ?? 0) / 1000;
+          scheduleSegmentStop(length);
+        },
+        { once: true }
+      );
       audio.play();
-      tickProgress(length);
     });
   }
 
@@ -240,41 +362,85 @@
         },
         body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
       });
-      tickProgress(length);
-      await new Promise((resolve) => setTimeout(resolve, length + 100));
-      await state.player.pause();
+      return new Promise((resolve) => {
+        state.segmentStopHandler = async () => {
+          await state.player.pause().catch(() => {});
+          resolve();
+        };
+        scheduleSegmentStop(length);
+      });
     } catch (err) {
       console.error(err);
       alert("Playback failed.");
     }
   }
 
-  function tickProgress(length) {
-    const total = state.segments.reduce((sum, s, idx) => sum + (idx < state.currentIndex ? getSegmentLength(s) : 0), 0) + length;
-    const showTotal = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0);
-    const startTs = performance.now();
-    const loop = () => {
-      const elapsed = performance.now() - startTs;
-      const pctSeg = Math.min(100, (elapsed / length) * 100);
-      const pctTotal = Math.min(100, ((total - length + elapsed) / showTotal) * 100);
-      dom.progressFill.style.width = `${pctSeg}%`;
-      dom.totalFill.style.width = `${pctTotal}%`;
-      if (elapsed < length && state.isPlaying) {
-        requestAnimationFrame(loop);
+  function startSegmentProgress(segment, length) {
+    state.currentSegment = segment;
+    state.segmentLengthMs = length;
+    state.segmentStartTs = performance.now();
+    if (state.progressRaf) cancelAnimationFrame(state.progressRaf);
+    updateProgressLoop();
+  }
+
+  function updateProgressLoop() {
+    if (!state.isPlaying || !state.currentSegment || !dom.barProgressFill) return;
+    const elapsed = Math.max(0, performance.now() - state.segmentStartTs);
+    const pct = Math.min(100, (elapsed / (state.segmentLengthMs || 1)) * 100);
+    dom.barProgressFill.style.width = `${pct}%`;
+    state.progressRaf = requestAnimationFrame(updateProgressLoop);
+  }
+
+  function scheduleSegmentStop(ms) {
+    clearTimeout(state.segmentStopTimer);
+    const duration = Math.max(0, ms);
+    state.segmentStopTimer = setTimeout(() => {
+      if (state.segmentStopHandler) {
+        state.segmentStopHandler();
       }
-    };
-    requestAnimationFrame(loop);
+    }, duration);
+  }
+
+  function handleSeek(e) {
+    if (!state.currentSegment || !state.segmentLengthMs) return;
+    const rect = dom.barProgress.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const targetMs = state.segmentLengthMs * pct;
+    seekTo(targetMs);
+  }
+
+  function seekTo(targetMs) {
+    const seg = state.currentSegment;
+    if (!seg) return;
+    const safeTarget = Math.max(0, Math.min(state.segmentLengthMs, targetMs));
+    state.segmentStartTs = performance.now() - safeTarget;
+    if (seg.type === "spotify" && state.player) {
+      const absolute = (seg.startMs ?? 0) + safeTarget;
+      state.player.seek(Math.max(0, Math.floor(absolute))).catch(() => {});
+    } else if ((seg.type === "voice" || seg.type === "upload") && state.activeAudio) {
+      const absolute = (seg.startMs ?? 0) + safeTarget;
+      state.activeAudio.currentTime = absolute / 1000;
+    }
+    const remaining = Math.max(0, state.segmentLengthMs - safeTarget);
+    if (state.segmentStopHandler) {
+      scheduleSegmentStop(remaining);
+    }
+    if (dom.barProgressFill) {
+      dom.barProgressFill.style.width = `${(safeTarget / state.segmentLengthMs) * 100}%`;
+    }
   }
 
   function updateNowPlaying(seg) {
     dom.nowTitle.textContent = seg.title || "—";
-    dom.nowSubtitle.textContent = `${seg.type === "spotify" ? "Spotify" : "Voice"} · ${seg.subtitle || ""}`;
+    const kind = seg.type === "spotify" ? "Spotify" : seg.type === "upload" ? "Upload" : "Voice";
+    dom.nowSubtitle.textContent = `${kind} · ${seg.subtitle || ""}`;
     dom.nowNote.textContent = seg.note || "";
-    if (seg.type === "spotify" && seg.album && seg.album.images && seg.album.images[0]) {
-      dom.cover.style.backgroundImage = `url(${seg.album.images[0].url})`;
-    } else {
-      dom.cover.style.backgroundImage = "linear-gradient(120deg, var(--accent), var(--accent-2))";
-    }
+    const art = seg.type === "spotify" && seg.album && seg.album.images && seg.album.images[0] ? seg.album.images[0].url : null;
+    const bg = art ? `url(${art})` : "linear-gradient(120deg, var(--accent), var(--accent-2))";
+    dom.cover.style.backgroundImage = bg;
+    if (dom.barCover) dom.barCover.style.backgroundImage = bg;
+    if (dom.barTitle) dom.barTitle.textContent = seg.title || "—";
+    if (dom.barSubtitle) dom.barSubtitle.textContent = seg.subtitle || "";
   }
 
   function getSegmentLength(segment) {
@@ -289,5 +455,16 @@
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = String(totalSeconds % 60).padStart(2, "0");
     return `${minutes}:${seconds}`;
+  }
+
+  function isSafeSessionUrl(url) {
+    if (!url) return false;
+    if (url.startsWith("data:")) return true;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.origin === window.location.origin;
+    } catch {
+      return false;
+    }
   }
 })();

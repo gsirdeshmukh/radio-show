@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio Show — Spotify + Voice</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src https://api.spotify.com https://accounts.spotify.com 'self'; img-src 'self' data: https://i.scdn.co; media-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
@@ -63,12 +65,13 @@
       <div class="row">
         <button id="connect-btn" class="primary">Connect Player</button>
         <button id="disconnect-btn" class="ghost">Disconnect</button>
+        <button id="forget-token-btn" class="ghost small">Forget Token</button>
       </div>
       <div class="field">
         <span>Show volume</span>
         <input id="master-volume" type="range" min="0" max="100" value="80" />
       </div>
-      <p class="note">Scopes: user-modify-playback-state, streaming, user-read-playback-state. The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
+      <p class="note">Scopes: streaming, user-modify-playback-state, user-read-playback-state, user-library-read, playlist-read-private, playlist-read-collaborative. The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
     </section>
 
     <section class="panel search">
@@ -80,6 +83,11 @@
         <input id="search-input" type="text" placeholder="Search tracks..." autocomplete="off" />
         <button type="submit" class="primary">Search</button>
       </form>
+      <div class="row wrap">
+        <button id="library-btn" class="ghost small">Saved Tracks</button>
+        <button id="playlists-btn" class="ghost small">My Playlists</button>
+        <button id="clear-results-btn" class="ghost small">Clear</button>
+      </div>
       <ul id="results" class="list"></ul>
     </section>
 
@@ -101,6 +109,10 @@
         <p>No recording yet.</p>
       </div>
       <button id="add-recording-btn" class="primary wide" disabled>Add to Show</button>
+      <div class="row wrap">
+        <button id="upload-btn" class="ghost">Upload MP3 / WAV</button>
+        <input id="upload-input" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/webm" style="display:none" />
+      </div>
     </section>
 
     <section class="panel show">
