@@ -1952,13 +1952,13 @@
           const overlays = Array.isArray(s.overlays)
             ? Promise.all(
                 s.overlays.map(async (ov) => {
-                  const url = ov.blob ? await blobToDataUrl(ov.blob) : ov.url;
+                  const url = await inlineAudioUrl(ov);
                   return { ...ov, blob: undefined, url };
                 })
               )
             : Promise.resolve([]);
           if (s.type === "voice" || s.type === "upload") {
-            const base64Url = s.blob ? blobToDataUrl(s.blob) : Promise.resolve(s.url);
+            const base64Url = inlineAudioUrl(s);
             return Promise.all([base64Url, overlays]).then(([url, ovs]) => ({
               ...s,
               blob: undefined,
@@ -2033,19 +2033,13 @@
           const overlays = Array.isArray(s.overlays)
             ? await Promise.all(
                 s.overlays.map(async (ov) => {
-                  let url = ov.url;
-                  if (!url && ov.blob) {
-                    url = await blobToDataUrl(ov.blob);
-                  }
+                  const url = await inlineAudioUrl(ov);
                   return { ...ov, url, blob: undefined };
                 })
               )
             : [];
           if (s.type === "voice" || s.type === "upload") {
-            let url = s.url;
-            if ((!url || url.startsWith("blob:")) && s.blob) {
-              url = await blobToDataUrl(s.blob);
-            }
+            const url = await inlineAudioUrl(s);
             return { ...s, url, blob: undefined, overlays };
           }
           return { ...s, overlays };
@@ -2077,6 +2071,29 @@
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  async function inlineAudioUrl(item) {
+    if (!item) return "";
+    if (item.blob) {
+      try {
+        return await blobToDataUrl(item.blob);
+      } catch (err) {
+        console.warn("inlineAudioUrl: could not read blob", err);
+      }
+    }
+    if (item.url && item.url.startsWith("blob:")) {
+      try {
+        const res = await fetch(item.url);
+        if (res.ok) {
+          const blob = await res.blob();
+          return await blobToDataUrl(blob);
+        }
+      } catch (err) {
+        console.warn("inlineAudioUrl: blob url not readable", err);
+      }
+    }
+    return item.url || "";
   }
 
   async function hydrateSegments(rawSegments) {
