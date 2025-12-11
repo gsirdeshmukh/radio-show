@@ -1703,6 +1703,12 @@
       return;
     }
     try {
+      const startMs = (() => {
+        const playerState = state.player ? state.player.getCurrentState && state.player.getCurrentState() : null;
+        return playerState && typeof playerState.then === "function"
+          ? null
+          : (playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0);
+      })();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType });
       state.overlayRecorder = recorder;
@@ -1720,6 +1726,7 @@
       await state.player.setVolume(targetVol).catch(() => {});
       const playerState = await state.player.getCurrentState().catch(() => null);
       const currentPos = playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0;
+      const overlayOffset = startMs != null ? startMs : currentPos;
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
         headers: {
@@ -1746,16 +1753,16 @@
         const blob = new Blob(state.overlayChunks, { type: recorder.mimeType });
         const url = URL.createObjectURL(blob);
         const duration = await measureAudioDuration(url, blob);
-        const overlay = {
-          id: uid(),
-          title: `Host over ${segment.title || "track"}`,
-          url,
-          blob,
-          duration,
-          offsetMs: startMs,
-          volume: 1,
-          duck: 0.3,
-        };
+          const overlay = {
+            id: uid(),
+            title: `Host over ${segment.title || "track"}`,
+            url,
+            blob,
+            duration,
+          offsetMs: overlayOffset,
+            volume: 1,
+            duck: 0.3,
+          };
         segment.overlays = segment.overlays || [];
         segment.overlays.push(overlay);
         await restoreOverlayVolume();
@@ -2012,22 +2019,25 @@
             if (Array.isArray(s.overlays)) {
               s.overlays = await Promise.all(
                 s.overlays.map(async (ov) => {
-                  if (ov.blob) return ov;
-                  if (ov.url && isSafeLocalUrl(ov.url)) {
+                  if (!ov.blob && ov.url && isSafeLocalUrl(ov.url)) {
                     try {
                       const res = await fetch(ov.url);
                       if (res.ok) ov.blob = await res.blob();
                     } catch {
                       // ignore
                     }
-                  } else {
-                    ov.blob = undefined;
+                  }
+                  if (ov.blob && !ov.url) {
+                    ov.url = URL.createObjectURL(ov.blob);
                   }
                   return ov;
                 })
               );
             } else {
               s.overlays = [];
+            }
+            if ((s.type === "voice" || s.type === "upload") && s.blob && !s.url) {
+              s.url = URL.createObjectURL(s.blob);
             }
             return s;
           })
