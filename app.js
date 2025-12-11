@@ -1337,6 +1337,9 @@
     if (state.isPlaying) {
       return;
     }
+    stopPreview();
+    stopShow();
+    await transferPlaybackToDevice();
     state.isPlaying = true;
     dom.playShowBtn.textContent = "Playing…";
     dom.playShowBtn.disabled = true;
@@ -1482,19 +1485,20 @@
     }
   }
 
-  async function playSegment(segment) {
-    const length = getSegmentLength(segment);
-    startListenProgress(length);
+  async function playSegment(segment, offsetMs = 0) {
+    const totalLength = getSegmentLength(segment);
+    const playLength = Math.max(0, totalLength - offsetMs);
+    startListenProgress(playLength);
     if (segment.type === "voice" || segment.type === "upload") {
-      await playVoiceSegment(segment);
+      await playVoiceSegment(segment, offsetMs, playLength);
     } else {
-      await playSpotifySegment(segment);
+      await playSpotifySegment(segment, offsetMs, playLength);
     }
     updateListenNow(segment);
     resetListenProgress();
   }
 
-  async function playVoiceSegment(segment) {
+  async function playVoiceSegment(segment, offsetMs = 0, playMsOverride) {
     const ctx = getAudioContext();
     await ctx.resume();
     const audio = new Audio(segment.url);
@@ -1505,9 +1509,9 @@
     source.connect(gain).connect(ctx.destination);
     state.activeAudio = audio;
 
-    const startMs = segment.startMs ?? 0;
-    const playMs = getSegmentLength(segment);
-    const playSeconds = playMs / 1000;
+    const startMs = (segment.startMs ?? 0) + offsetMs;
+    const playMs = playMsOverride ?? getSegmentLength(segment) - offsetMs;
+    const playSeconds = Math.max(0, playMs) / 1000;
 
     if (segment.fadeIn) {
       gain.gain.setValueAtTime(0.001, ctx.currentTime);
@@ -1522,7 +1526,10 @@
       });
     }
 
-    return new Promise((resolve) => {
+      stopTimer = setTimeout(() => {
+        state.player.pause().catch(() => {});
+      }, Math.max(0, playMs + 50));
+      return new Promise((resolve) => {
       let stopTimer;
       audio.addEventListener("play", () => {
         audio.currentTime = Math.min(audio.duration || 0, startMs / 1000);
@@ -1540,7 +1547,7 @@
     });
   }
 
-  async function playSpotifySegment(segment) {
+  async function playSpotifySegment(segment, offsetMs = 0, playMsOverride) {
     if (!state.player || !state.deviceId) {
       alert("Connect Spotify first.");
       stopShow();
@@ -1548,11 +1555,12 @@
     }
     const vol = segment.volume ?? state.masterVolume;
     await state.player.setVolume(segment.fadeIn ? 0.01 : vol);
-    const startMs = segment.startMs ?? 0;
-    const playMs = getSegmentLength(segment);
+    const startMs = (segment.startMs ?? 0) + offsetMs;
+    const playMs = playMsOverride ?? getSegmentLength(segment) - offsetMs;
     const overlays = Array.isArray(segment.overlays) ? segment.overlays : [];
     const timers = [];
     let duckCount = 0;
+    let stopTimer;
     try {
       const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
@@ -1621,6 +1629,7 @@
       const fallback = setTimeout(() => {
         state.player.removeListener("player_state_changed", handler);
         timers.forEach((t) => clearTimeout(t));
+        if (stopTimer) clearTimeout(stopTimer);
         resolve();
       }, playMs + 1500);
 
@@ -1631,6 +1640,7 @@
           clearTimeout(fallback);
           state.player.removeListener("player_state_changed", handler);
           timers.forEach((t) => clearTimeout(t));
+          if (stopTimer) clearTimeout(stopTimer);
           resolve();
         }
       };
@@ -1696,19 +1706,20 @@
       state.overlayOriginalVolume = segment.volume ?? state.masterVolume;
       // live monitoring
       const monitorGain = getAudioContext().createGain();
-      monitorGain.gain.value = 1;
+      monitorGain.gain.value = 0; // prevent echo; set >0 for monitoring if desired
       const monitorSource = getAudioContext().createMediaStreamSource(stream);
       monitorSource.connect(monitorGain).connect(getAudioContext().destination);
       state.overlayMonitor = { monitorGain, monitorSource };
       await state.player.setVolume(targetVol).catch(() => {});
-      const startMs = segment.cueMs ?? segment.startMs ?? 0;
+      const playerState = await state.player.getCurrentState().catch(() => null);
+      const currentPos = playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0;
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${state.token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
+        body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(currentPos)) }),
       });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) state.overlayChunks.push(e.data);
@@ -1907,7 +1918,7 @@
   function handleHotkeys(e) {
     const tag = (e.target?.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
-    if (e.metaKey && e.code === "Space") {
+    if (e.altKey && e.code === "Space") {
       const focus = getFocusedSegment();
       if (focus) {
         e.preventDefault();
