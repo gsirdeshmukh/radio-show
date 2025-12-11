@@ -1,7 +1,14 @@
 (() => {
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
   const DEFAULT_REDIRECT = "https://gsirdeshmukh.github.io/radio-show/";
-  const REQUIRED_SCOPES = ["streaming", "user-modify-playback-state", "user-read-playback-state"];
+  const REQUIRED_SCOPES = [
+    "streaming",
+    "user-modify-playback-state",
+    "user-read-playback-state",
+    "user-library-read",
+    "playlist-read-private",
+    "playlist-read-collaborative",
+  ];
   const SCOPES = REQUIRED_SCOPES.join(" ");
 
   const state = {
@@ -198,7 +205,8 @@
       state.fadeMs = Number(e.target.value);
     });
     document.addEventListener("keydown", handleHotkeys);
-    dom.status && (dom.status.title = "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state");
+    dom.status &&
+      (dom.status.title = "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state, user-library-read, playlist-read-private, playlist-read-collaborative");
   }
 
   function showError(msg) {
