@@ -35,6 +35,7 @@
     overlaySegment: null,
     overlayOriginalVolume: null,
     overlayMonitor: null,
+    overlayRecording: false,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -1484,7 +1485,7 @@
   async function playSegment(segment) {
     const length = getSegmentLength(segment);
     startListenProgress(length);
-    if (segment.type === "voice") {
+    if (segment.type === "voice" || segment.type === "upload") {
       await playVoiceSegment(segment);
     } else {
       await playSpotifySegment(segment);
@@ -1690,6 +1691,7 @@
       state.overlayRecorder = recorder;
       state.overlayChunks = [];
       state.overlaySegment = segment;
+      state.overlayRecording = true;
       const targetVol = (segment.volume ?? state.masterVolume) * 0.3;
       state.overlayOriginalVolume = segment.volume ?? state.masterVolume;
       // live monitoring
@@ -1719,6 +1721,8 @@
           state.overlayRecorder = null;
           state.overlaySegment = null;
           state.overlayMonitor = null;
+          state.overlayRecording = false;
+          showError("No mic audio captured—check permission/input.");
           return;
         }
         const blob = new Blob(state.overlayChunks, { type: recorder.mimeType });
@@ -1740,9 +1744,10 @@
         state.overlayRecorder = null;
         state.overlaySegment = null;
         state.overlayMonitor = null;
+        state.overlayRecording = false;
         renderSegments();
       };
-      recorder.start();
+      recorder.start(250);
     } catch (err) {
       console.error(err);
       alert("Could not start talk-over.");
@@ -1756,6 +1761,7 @@
     } catch {
       // ignore
     }
+    state.overlayRecording = false;
   }
 
   async function restoreOverlayVolume() {
