@@ -438,6 +438,17 @@ button:hover:not(:disabled) {
 .segments li {
   grid-template-columns: 1fr auto auto;
 }
+.segments li.active {
+  outline: 1px solid var(--accent);
+}
+.segments li .drag-handle {
+  cursor: grab;
+  font-size: 14px;
+  color: var(--muted);
+}
+.segments li.dragging {
+  opacity: 0.6;
+}
 
 .panel.show {
   grid-column: span 2;
@@ -663,6 +674,27 @@ button:hover:not(:disabled) {
   border-top: 1px solid var(--grid);
   backdrop-filter: blur(6px);
   z-index: 10;
+}
+
+.listen-header .listen-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.listen-controls .control-center {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.listen-controls .control-left {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .bar-cover {

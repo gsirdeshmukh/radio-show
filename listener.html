@@ -24,18 +24,28 @@
   </header>
 
   <main class="grid">
-    <section class="panel">
+    <section class="panel listen-header">
       <div class="panel-head">
         <h2>Load Show</h2>
         <span class="hint">JSON export from builder</span>
       </div>
-      <div class="row wrap">
-        <label class="field">
-          <span>OAuth token</span>
-          <input id="token-input" type="password" placeholder="Spotify token with streaming scopes" />
-        </label>
-        <button id="connect-btn" class="primary">Connect Player</button>
-        <input id="file-input" type="file" accept="application/json" />
+      <div class="listen-controls">
+        <div class="control-left">
+          <label class="field">
+            <span>OAuth token</span>
+            <input id="token-input" type="password" placeholder="Spotify token with streaming scopes" />
+          </label>
+          <div class="row wrap">
+            <button id="connect-btn" class="primary">Connect Player</button>
+            <input id="file-input" type="file" accept="application/json" />
+          </div>
+        </div>
+        <div class="control-center">
+          <button id="prev-btn" class="ghost small">Prev</button>
+          <button id="play-btn" class="primary">Play Current</button>
+          <button id="next-btn" class="ghost small">Next</button>
+          <button id="stop-btn" class="ghost">Stop</button>
+        </div>
       </div>
     </section>
 
@@ -50,11 +60,11 @@
           <div class="title" id="now-title">—</div>
           <div class="subtitle" id="now-subtitle">—</div>
           <div class="subtitle" id="now-note"></div>
+          <div class="progress">
+            <div class="progress-bar"><div id="progress-fill"></div></div>
+            <div class="progress-bar total"><div id="total-fill"></div></div>
+          </div>
         </div>
-      </div>
-      <div class="row wrap">
-        <button id="play-btn" class="primary">Play</button>
-        <button id="stop-btn" class="ghost">Stop</button>
       </div>
     </section>
 
