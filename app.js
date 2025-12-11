@@ -403,6 +403,8 @@
       setStatus("spotify: token acquired", false);
       // Clean up URL for nicer UX
       window.history.replaceState({}, document.title, window.location.pathname);
+      // Auto-connect the player after PKCE succeeds.
+      connectSpotify().catch(() => {});
     } catch (err) {
       console.error(err);
       alert("Could not finish PKCE auth. Check console for details.");
