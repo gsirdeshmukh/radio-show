@@ -253,12 +253,8 @@
     assignDom();
     bindEvents();
     setStatus("spotify: disconnected", false);
-    // Default redirect uses callback.html under the current path to avoid trailing slash mismatches.
-    const basePath = window.location.pathname.endsWith("callback.html")
-      ? window.location.pathname.replace(/callback\.html$/, "")
-      : window.location.pathname;
-    const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
-    state.redirectUri = `${window.location.origin}${normalizedBase}callback.html`;
+    // Always use the GitHub Pages redirect for PKCE.
+    state.redirectUri = "https://gsirdeshmukh.github.io/radio-show/";
     dom.redirectInput.value = state.redirectUri;
     const storedClientId = sessionStorage.getItem("rs_client_id");
     dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
