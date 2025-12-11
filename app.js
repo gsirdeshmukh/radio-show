@@ -1319,6 +1319,11 @@
       alert("Build a show first.");
       return;
     }
+    if (!state.token) {
+      showError("No token. Use PKCE auth, then Connect Player.");
+      return;
+    }
+    hideError();
     if (state.isPlaying) {
       return;
     }
@@ -1539,7 +1544,7 @@
     const timers = [];
     let duckCount = 0;
     try {
-      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
+      const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${state.token}`,
@@ -1547,9 +1552,21 @@
         },
         body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
       });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          showError("Playback scopes missing. Click Forget Token and re-auth with PKCE.");
+          forgetToken();
+          stopShow();
+          return;
+        }
+        throw new Error(`Playback request failed (${res.status})`);
+      } else {
+        hideError();
+      }
     } catch (err) {
       console.error(err);
-      alert("Playback request failed.");
+      showError("Playback request failed. Re-auth and reconnect.");
+      stopShow();
     }
 
     if (segment.fadeIn) {
