@@ -424,6 +424,7 @@
       const data = await res.json();
       state.token = data.access_token;
       dom.tokenInput.value = state.token;
+      sessionStorage.setItem("rs_token", state.token);
       setStatus("spotify: token acquired", false);
       // Clean up URL for nicer UX
       window.history.replaceState({}, document.title, window.location.pathname);
