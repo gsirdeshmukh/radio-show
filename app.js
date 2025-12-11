@@ -1703,12 +1703,6 @@
       return;
     }
     try {
-      const startMs = (() => {
-        const playerState = state.player ? state.player.getCurrentState && state.player.getCurrentState() : null;
-        return playerState && typeof playerState.then === "function"
-          ? null
-          : (playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0);
-      })();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType });
       state.overlayRecorder = recorder;
@@ -1726,7 +1720,8 @@
       await state.player.setVolume(targetVol).catch(() => {});
       const playerState = await state.player.getCurrentState().catch(() => null);
       const currentPos = playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0;
-      const overlayOffset = startMs != null ? startMs : currentPos;
+      const segmentStart = segment.startMs ?? 0;
+      const overlayOffset = Math.max(0, currentPos - segmentStart);
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
         headers: {
@@ -1998,52 +1993,7 @@
         alert("Invalid show file.");
         return;
       }
-      const segments = (
-        await Promise.all(
-          payload.segments.map(async (s) => {
-            if ((s.type === "voice" || s.type === "upload") && s.url && !s.blob) {
-              const safe = isSafeLocalUrl(s.url);
-              if (safe) {
-                try {
-                  const res = await fetch(s.url);
-                  if (res.ok) {
-                    s.blob = await res.blob();
-                  }
-                } catch {
-                  // ignore fetch errors; url will be used directly on play
-                }
-              } else {
-                console.warn("Skipping external audio fetch for safety", s.url);
-              }
-            }
-            if (Array.isArray(s.overlays)) {
-              s.overlays = await Promise.all(
-                s.overlays.map(async (ov) => {
-                  if (!ov.blob && ov.url && isSafeLocalUrl(ov.url)) {
-                    try {
-                      const res = await fetch(ov.url);
-                      if (res.ok) ov.blob = await res.blob();
-                    } catch {
-                      // ignore
-                    }
-                  }
-                  if (ov.blob && !ov.url) {
-                    ov.url = URL.createObjectURL(ov.blob);
-                  }
-                  return ov;
-                })
-              );
-            } else {
-              s.overlays = [];
-            }
-            if ((s.type === "voice" || s.type === "upload") && s.blob && !s.url) {
-              s.url = URL.createObjectURL(s.blob);
-            }
-            return s;
-          })
-        )
-      ).filter(Boolean);
-      state.segments = segments;
+      state.segments = (await hydrateSegments(payload.segments)).filter(Boolean);
       if (payload.meta) {
         dom.sessionTitle.value = payload.meta.title || "";
         dom.sessionHost.value = payload.meta.host || "";
@@ -2067,7 +2017,7 @@
     dom.listenFile.value = "";
   }
 
-  function persistLocal() {
+  async function persistLocal() {
     try {
       localStorage.setItem(
         "rs_session_meta",
@@ -2078,41 +2028,98 @@
           date: dom.sessionDate.value,
         })
       );
-      const data = state.segments.map((s) => {
-        const overlays = Array.isArray(s.overlays)
-          ? s.overlays.map((ov) => ({ ...ov, blob: undefined }))
-          : [];
-        if (s.type === "voice" || s.type === "upload") {
-          return { ...s, blob: undefined, overlays };
-        }
-        return { ...s, overlays };
-      });
+      const data = await Promise.all(
+        state.segments.map(async (s) => {
+          const overlays = Array.isArray(s.overlays)
+            ? await Promise.all(
+                s.overlays.map(async (ov) => {
+                  let url = ov.url;
+                  if (!url && ov.blob) {
+                    url = await blobToDataUrl(ov.blob);
+                  }
+                  return { ...ov, url, blob: undefined };
+                })
+              )
+            : [];
+          if (s.type === "voice" || s.type === "upload") {
+            let url = s.url;
+            if ((!url || url.startsWith("blob:")) && s.blob) {
+              url = await blobToDataUrl(s.blob);
+            }
+            return { ...s, url, blob: undefined, overlays };
+          }
+          return { ...s, overlays };
+        })
+      );
       localStorage.setItem("rs_show_segments", JSON.stringify(data));
     } catch (err) {
       console.warn("persist local failed", err);
     }
   }
 
-  function restoreLocal() {
+  async function restoreLocal() {
     try {
       const raw = localStorage.getItem("rs_show_segments");
       if (!raw) return;
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return;
-    state.segments = data.map((s) => ({ ...s, overlays: Array.isArray(s.overlays) ? s.overlays : [] }));
-    renderSegments();
-  } catch (err) {
-    console.warn("restore local failed", err);
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data)) return;
+      state.segments = await hydrateSegments(data);
+      renderSegments();
+    } catch (err) {
+      console.warn("restore local failed", err);
+    }
   }
-}
 
-function blobToDataUrl(blob) {
+  function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  async function hydrateSegments(rawSegments) {
+    return Promise.all(
+      rawSegments.map(async (s) => {
+        const segment = { ...s };
+        if (Array.isArray(segment.overlays)) {
+          segment.overlays = await Promise.all(
+            segment.overlays.map(async (ov) => {
+              const overlay = { ...ov };
+              if (!overlay.blob && overlay.url && isSafeLocalUrl(overlay.url)) {
+                try {
+                  const res = await fetch(overlay.url);
+                  if (res.ok) overlay.blob = await res.blob();
+                } catch {
+                  // ignore fetch errors; leave url
+                }
+              }
+              if (overlay.blob && !overlay.url) {
+                overlay.url = URL.createObjectURL(overlay.blob);
+              }
+              return overlay;
+            })
+          );
+        } else {
+          segment.overlays = [];
+        }
+        if ((segment.type === "voice" || segment.type === "upload") && segment.url && !segment.blob) {
+          if (isSafeLocalUrl(segment.url)) {
+            try {
+              const res = await fetch(segment.url);
+              if (res.ok) segment.blob = await res.blob();
+            } catch {
+              // keep url fallback
+            }
+          }
+        }
+        if ((segment.type === "voice" || segment.type === "upload") && segment.blob && !segment.url) {
+          segment.url = URL.createObjectURL(segment.blob);
+        }
+        return segment;
+      })
+    );
   }
 
   function isSafeLocalUrl(url) {
