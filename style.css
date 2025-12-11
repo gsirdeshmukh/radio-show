@@ -130,6 +130,41 @@ p {
 .theme-dot[data-theme="violet"] { background: linear-gradient(135deg, #b388ff, #6c63ff); }
 .theme-dot[data-theme="default"] { background: linear-gradient(135deg, #4cf1c5, #22c1a3); }
 
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ticker {
+  min-width: 180px;
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 1px dashed var(--grid);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  position: relative;
+}
+
+.ticker span {
+  display: inline-block;
+  animation: ticker-flip 9s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+}
+
+@keyframes ticker-flip {
+  0% { transform: translateY(0); opacity: 1; }
+  30% { transform: translateY(0); opacity: 1; }
+  40% { transform: translateY(-100%); opacity: 0; }
+  50% { transform: translateY(100%); opacity: 0; }
+  60% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
 .cover {
   width: 120px;
   height: 120px;
@@ -137,6 +172,11 @@ p {
   border: 1px solid var(--grid);
   background-size: cover;
   background-position: center;
+}
+
+.listen-now .cover {
+  width: 140px;
+  height: 140px;
 }
 
 .progress {
@@ -167,6 +207,10 @@ p {
   width: 0%;
 }
 
+.listen {
+  grid-column: 1 / -1;
+}
+
 .status-row {
   display: flex;
   align-items: center;
@@ -175,8 +219,8 @@ p {
 }
 
 .ticker {
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 180px;
+  max-width: 280px;
   overflow: hidden;
   white-space: nowrap;
   border: 1px dashed var(--grid);
@@ -188,12 +232,7 @@ p {
 
 .ticker span {
   display: inline-block;
-  animation: marquee 12s linear infinite;
-}
-
-@keyframes marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-100%); }
+  animation: none;
 }
 
 .grid {
@@ -520,6 +559,39 @@ button:hover:not(:disabled) {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  background: var(--panel-strong);
+  border: 1px solid var(--grid);
+  min-width: 200px;
+  z-index: 30;
+  box-shadow: var(--shadow);
+}
+
+.dropdown-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dropdown-menu li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--panel);
+  border: 1px solid var(--grid);
 }
 
 .pill {
