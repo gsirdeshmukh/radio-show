@@ -488,6 +488,20 @@ button:hover:not(:disabled) {
   opacity: 0.6;
 }
 
+.error-banner {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background: #f75c87;
+  color: #05150f;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-weight: 700;
+  z-index: 200;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  display: none;
+}
+
 .panel.show {
   grid-column: span 2;
 }
