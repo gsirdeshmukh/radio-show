@@ -168,7 +168,7 @@
     dom.addRecordingBtn.addEventListener("click", addRecordingToShow);
     dom.uploadBtn.addEventListener("click", () => dom.uploadInput.click());
     dom.uploadInput.addEventListener("change", handleUpload);
-    dom.playShowBtn.addEventListener("click", playShow);
+    dom.playShowBtn.addEventListener("click", () => playShow());
     dom.stopShowBtn.addEventListener("click", stopShow);
     dom.saveShowBtn.addEventListener("click", () => exportShow({ tracksOnly: false }));
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
@@ -1526,24 +1526,26 @@
       });
     }
 
-      stopTimer = setTimeout(() => {
-        state.player.pause().catch(() => {});
-      }, Math.max(0, playMs + 50));
-      return new Promise((resolve) => {
+    return new Promise((resolve) => {
       let stopTimer;
-      audio.addEventListener("play", () => {
-        audio.currentTime = Math.min(audio.duration || 0, startMs / 1000);
-        stopTimer = setTimeout(() => {
-          audio.pause();
-          audio.dispatchEvent(new Event("ended"));
-        }, playMs + 50);
-      }, { once: true });
-      audio.addEventListener("ended", () => {
-        state.activeAudio = null;
+      const cleanup = () => {
         if (stopTimer) clearTimeout(stopTimer);
+        state.activeAudio = null;
         resolve();
-      });
-      audio.play();
+      };
+      audio.addEventListener(
+        "play",
+        () => {
+          audio.currentTime = Math.min(audio.duration || 0, startMs / 1000);
+          stopTimer = setTimeout(() => {
+            audio.pause();
+            audio.dispatchEvent(new Event("ended"));
+          }, Math.max(0, playMs) + 50);
+        },
+        { once: true }
+      );
+      audio.addEventListener("ended", cleanup, { once: true });
+      audio.play().catch(() => cleanup());
     });
   }
 
@@ -1626,24 +1628,29 @@
     });
 
     return new Promise((resolve) => {
-      const fallback = setTimeout(() => {
-        state.player.removeListener("player_state_changed", handler);
-        timers.forEach((t) => clearTimeout(t));
-        if (stopTimer) clearTimeout(stopTimer);
-        resolve();
-      }, playMs + 1500);
-
+      let settled = false;
+      let fallback;
       const handler = (s) => {
         if (!s || !s.track_window || !s.track_window.current_track) return;
         const uri = s.track_window.current_track.uri;
-        if (uri === segment.uri && s.paused && s.position === 0) {
-          clearTimeout(fallback);
-          state.player.removeListener("player_state_changed", handler);
-          timers.forEach((t) => clearTimeout(t));
-          if (stopTimer) clearTimeout(stopTimer);
-          resolve();
+        if (uri === segment.uri && s.paused) {
+          cleanup();
         }
       };
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        state.player.removeListener("player_state_changed", handler);
+        timers.forEach((t) => clearTimeout(t));
+        if (stopTimer) clearTimeout(stopTimer);
+        if (fallback) clearTimeout(fallback);
+        resolve();
+      };
+      fallback = setTimeout(cleanup, Math.max(0, playMs + 1500));
+      stopTimer = setTimeout(() => {
+        state.player.pause().catch(() => {});
+        cleanup();
+      }, Math.max(0, playMs));
       state.player.addListener("player_state_changed", handler);
     });
   }
