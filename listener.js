@@ -141,6 +141,24 @@
               // leave url
             }
           }
+          if (Array.isArray(s.overlays)) {
+            s.overlays = await Promise.all(
+              s.overlays.map(async (ov) => {
+                if (ov.blob) return ov;
+                if (ov.url && isSafeSessionUrl(ov.url)) {
+                  try {
+                    const res = await fetch(ov.url);
+                    if (res.ok) ov.blob = await res.blob();
+                  } catch {
+                    // ignore
+                  }
+                }
+                return ov;
+              })
+            );
+          } else {
+            s.overlays = [];
+          }
           return s;
         })
       )
@@ -273,7 +291,7 @@
       alert("Load a show JSON first.");
       return;
     }
-    if (!state.token) {
+    if (!state.token && state.segments.some((s) => s.type === "spotify")) {
       alert("Connect Spotify first.");
       return;
     }
@@ -351,8 +369,23 @@
       stopShow();
       return;
     }
+    const overlays = Array.isArray(segment.overlays) ? segment.overlays : [];
     const startMs = segment.startMs ?? 0;
     await state.player.setVolume(segment.fadeIn ? 0.01 : segment.volume ?? 0.8);
+    const timers = [];
+    let duckCount = 0;
+    const vol = segment.volume ?? 0.8;
+    const duck = () => {
+      duckCount += 1;
+      state.player.setVolume(Math.max(0, vol * 0.3)).catch(() => {});
+    };
+    const unduckLater = (ms) => {
+      const t = setTimeout(() => {
+        duckCount = Math.max(0, duckCount - 1);
+        if (duckCount === 0) state.player.setVolume(vol).catch(() => {});
+      }, ms);
+      timers.push(t);
+    };
     try {
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
@@ -363,10 +396,31 @@
         body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
       });
       return new Promise((resolve) => {
+        overlays.forEach((ov) => {
+          const url = ov.url || (ov.blob ? URL.createObjectURL(ov.blob) : null);
+          if (!url) return;
+          const audio = new Audio(url);
+          audio.volume = ov.volume ?? 1;
+          const start = Math.max(0, ov.offsetMs || 0);
+          const timer = setTimeout(() => {
+            duck();
+            audio.play().catch(() => {});
+            const ovMs = ov.duration || (audio.duration ? audio.duration * 1000 : 1000);
+            unduckLater(Math.max(200, ovMs));
+          }, start);
+          timers.push(timer);
+        });
+
         state.segmentStopHandler = async () => {
+          timers.forEach((t) => clearTimeout(t));
           await state.player.pause().catch(() => {});
           resolve();
         };
+        const fallback = setTimeout(() => {
+          timers.forEach((t) => clearTimeout(t));
+          resolve();
+        }, length + 1500);
+        timers.push(fallback);
         scheduleSegmentStop(length);
       });
     } catch (err) {
