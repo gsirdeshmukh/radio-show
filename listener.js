@@ -38,6 +38,8 @@
     dom.tokenInput = document.getElementById("token-input");
     dom.connectBtn = document.getElementById("connect-btn");
     dom.fileInput = document.getElementById("file-input");
+    dom.prevBtn = document.getElementById("prev-btn");
+    dom.nextBtn = document.getElementById("next-btn");
     dom.status = document.getElementById("spotify-status");
     dom.nowTitle = document.getElementById("now-title");
     dom.nowSubtitle = document.getElementById("now-subtitle");
@@ -65,6 +67,8 @@
     dom.fileInput.addEventListener("change", handleFile);
     dom.playBtn.addEventListener("click", playShow);
     dom.stopBtn.addEventListener("click", stopShow);
+    dom.prevBtn.addEventListener("click", playPrev);
+    dom.nextBtn.addEventListener("click", playNext);
     dom.refreshTopBtn.addEventListener("click", loadTopSessions);
     dom.sessionSearch.addEventListener("input", () => renderTopSessions(dom.sessionSearch.value));
     dom.barPlay.addEventListener("click", playShow);
@@ -254,6 +258,7 @@
     dom.segments.innerHTML = "";
     state.segments.forEach((s, idx) => {
       const li = document.createElement("li");
+      if (idx === state.currentIndex) li.classList.add("active");
       const meta = document.createElement("div");
       meta.className = "meta";
       const title = document.createElement("div");
@@ -303,6 +308,7 @@
       if (!state.isPlaying) break;
     }
     state.isPlaying = false;
+    renderList();
   }
 
   function stopShow() {
@@ -320,6 +326,7 @@
     state.currentSegment = null;
     if (state.progressRaf) cancelAnimationFrame(state.progressRaf);
     if (dom.barProgressFill) dom.barProgressFill.style.width = "0%";
+    renderList();
   }
 
   async function playSegment(segment) {
@@ -453,6 +460,20 @@
         state.segmentStopHandler();
       }
     }, duration);
+  }
+
+  function playPrev() {
+    if (!state.segments.length) return;
+    state.currentIndex = Math.max(0, state.currentIndex - 1);
+    renderList();
+    playShow();
+  }
+
+  function playNext() {
+    if (!state.segments.length) return;
+    state.currentIndex = Math.min(state.segments.length - 1, state.currentIndex + 1);
+    renderList();
+    playShow();
   }
 
   function handleSeek(e) {
