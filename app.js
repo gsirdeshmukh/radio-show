@@ -35,6 +35,12 @@
     previewSegmentId: null,
     tickerTimer: null,
     tickerIndex: 0,
+    focusSegmentId: null,
+    overlayRecorder: null,
+    overlayChunks: [],
+    overlaySegment: null,
+    overlayOriginalVolume: null,
+    overlayMonitor: null,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -551,6 +557,7 @@
       fadeOut: false,
       volume: state.masterVolume,
       cueMs: 0,
+      overlays: [],
     };
     state.segments.push(segment);
     fetchAudioFeatures(segment);
@@ -1179,10 +1186,6 @@
       down.textContent = "▼";
       down.title = "Move down";
       down.addEventListener("click", () => moveSegment(index, 1));
-      const split = document.createElement("button");
-      split.textContent = "Split";
-      split.title = "Split at cue";
-      split.addEventListener("click", () => splitSegment(segment, index));
       const talk = document.createElement("button");
       talk.textContent = state.overlaySegment && state.overlaySegment.id === segment.id ? "Stop Talk" : "Talk-over";
       talk.title = "Record voice over this track (Cmd+Space)";
@@ -1196,7 +1199,6 @@
       moves.appendChild(playFrom);
       moves.appendChild(up);
       moves.appendChild(down);
-      moves.appendChild(split);
       moves.appendChild(talk);
       moves.appendChild(remove);
 
@@ -1235,20 +1237,6 @@
     const [item] = list.splice(index, 1);
     list.splice(target, 0, item);
     state.segments = list;
-    renderSegments();
-  }
-
-  function splitSegment(segment, index) {
-    const cue = segment.cueMs ?? segment.startMs ?? 0;
-    const start = segment.startMs ?? 0;
-    const end = segment.endMs ?? segment.duration ?? 0;
-    if (cue <= start + 400 || cue >= end - 400) {
-      alert("Set a cue inside the region (shift-click bar) before splitting.");
-      return;
-    }
-    const first = { ...segment, id: uid(), endMs: cue, cueMs: start };
-    const second = { ...segment, id: uid(), startMs: cue, cueMs: cue };
-    state.segments.splice(index, 1, first, second);
     renderSegments();
   }
 
@@ -1475,6 +1463,9 @@
     await state.player.setVolume(segment.fadeIn ? 0.01 : vol);
     const startMs = segment.startMs ?? 0;
     const playMs = getSegmentLength(segment);
+    const overlays = Array.isArray(segment.overlays) ? segment.overlays : [];
+    const timers = [];
+    let duckCount = 0;
     try {
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
@@ -1501,9 +1492,36 @@
       }, Math.max(0, playMs - state.fadeMs));
     }
 
+    const duck = () => {
+      duckCount += 1;
+      state.player.setVolume(Math.max(0, vol * 0.3)).catch(() => {});
+    };
+    const unduckLater = (ms) => {
+      const t = setTimeout(() => {
+        duckCount = Math.max(0, duckCount - 1);
+        if (duckCount === 0) state.player.setVolume(vol).catch(() => {});
+      }, ms);
+      timers.push(t);
+    };
+    overlays.forEach((ov) => {
+      const url = ov.url || (ov.blob ? URL.createObjectURL(ov.blob) : null);
+      if (!url) return;
+      const audio = new Audio(url);
+      audio.volume = ov.volume ?? 1;
+      const start = Math.max(0, ov.offsetMs || 0);
+      const timer = setTimeout(() => {
+        duck();
+        audio.play().catch(() => {});
+        const ovMs = ov.duration || (audio.duration ? audio.duration * 1000 : 1000);
+        unduckLater(Math.max(200, ovMs));
+      }, start);
+      timers.push(timer);
+    });
+
     return new Promise((resolve) => {
       const fallback = setTimeout(() => {
         state.player.removeListener("player_state_changed", handler);
+        timers.forEach((t) => clearTimeout(t));
         resolve();
       }, playMs + 1500);
 
@@ -1513,6 +1531,7 @@
         if (uri === segment.uri && s.paused && s.position === 0) {
           clearTimeout(fallback);
           state.player.removeListener("player_state_changed", handler);
+          timers.forEach((t) => clearTimeout(t));
           resolve();
         }
       };
@@ -1554,7 +1573,11 @@
   }
 
   async function startTalkOver(segment) {
-    if (segment.type === "spotify" && !state.token) {
+    if (segment.type !== "spotify") {
+      alert("Talk-over works on Spotify tracks.");
+      return;
+    }
+    if (!state.token || !state.player || !state.deviceId) {
       alert("Connect Spotify first.");
       return;
     }
@@ -1571,18 +1594,22 @@
       state.overlaySegment = segment;
       const targetVol = (segment.volume ?? state.masterVolume) * 0.3;
       state.overlayOriginalVolume = segment.volume ?? state.masterVolume;
-      if (segment.type === "spotify" && state.player && state.deviceId) {
-        await state.player.setVolume(targetVol).catch(() => {});
-        const startMs = segment.cueMs ?? segment.startMs ?? 0;
-        await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${state.token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
-        });
-      }
+      // live monitoring
+      const monitorGain = getAudioContext().createGain();
+      monitorGain.gain.value = 1;
+      const monitorSource = getAudioContext().createMediaStreamSource(stream);
+      monitorSource.connect(monitorGain).connect(getAudioContext().destination);
+      state.overlayMonitor = { monitorGain, monitorSource };
+      await state.player.setVolume(targetVol).catch(() => {});
+      const startMs = segment.cueMs ?? segment.startMs ?? 0;
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${state.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uris: [segment.uri], position_ms: Math.max(0, Math.floor(startMs)) }),
+      });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) state.overlayChunks.push(e.data);
       };
@@ -1593,35 +1620,28 @@
           await restoreOverlayVolume();
           state.overlayRecorder = null;
           state.overlaySegment = null;
+          state.overlayMonitor = null;
           return;
         }
         const blob = new Blob(state.overlayChunks, { type: recorder.mimeType });
         const url = URL.createObjectURL(blob);
         const duration = await measureAudioDuration(url, blob);
-        const voiceSeg = {
+        const overlay = {
           id: uid(),
-          type: "voice",
           title: `Host over ${segment.title || "track"}`,
-          subtitle: "talk-over",
-          duration,
-          startMs: 0,
-          endMs: duration,
-          bpm: null,
-          key: null,
-          energy: null,
-          note: "Live host overlay",
-          blob,
           url,
-          fadeIn: false,
-          fadeOut: false,
+          blob,
+          duration,
+          offsetMs: startMs,
           volume: 1,
-          cueMs: 0,
+          duck: 0.3,
         };
-        const idx = state.segments.findIndex((s) => s.id === segment.id);
-        state.segments.splice(idx + 1, 0, voiceSeg);
+        segment.overlays = segment.overlays || [];
+        segment.overlays.push(overlay);
         await restoreOverlayVolume();
         state.overlayRecorder = null;
         state.overlaySegment = null;
+        state.overlayMonitor = null;
         renderSegments();
       };
       recorder.start();
@@ -1645,6 +1665,15 @@
       await state.player.setVolume(state.overlayOriginalVolume).catch(() => {});
     }
     state.overlayOriginalVolume = null;
+    if (state.overlayMonitor) {
+      try {
+        state.overlayMonitor.monitorSource.disconnect();
+        state.overlayMonitor.monitorGain.disconnect();
+      } catch {
+        // ignore
+      }
+      state.overlayMonitor = null;
+    }
   }
 
   function pickMimeType() {
@@ -1781,13 +1810,6 @@
         toggleTalkOver(focus.segment);
       }
     }
-    if (!e.metaKey && !e.ctrlKey && e.key?.toLowerCase() === "s") {
-      const focus = getFocusedSegment();
-      if (focus) {
-        e.preventDefault();
-        splitSegment(focus.segment, focus.index);
-      }
-    }
   }
 
   function exportShow({ tracksOnly }) {
@@ -1800,18 +1822,29 @@
         genre: dom.sessionGenre.value,
         date: dom.sessionDate.value,
       },
-      segments: state.segments.map((s) => {
-        if (tracksOnly && s.type !== "spotify") return null;
-        if (s.type === "voice" || s.type === "upload") {
-          const base64Url = s.blob ? blobToDataUrl(s.blob) : Promise.resolve(s.url);
-          return base64Url.then((url) => ({
-            ...s,
-            blob: undefined,
-            url,
-          }));
-        }
-        return Promise.resolve({ ...s });
-      }).filter(Boolean),
+      segments: state.segments
+        .map((s) => {
+          if (tracksOnly && s.type !== "spotify") return null;
+          const overlays = Array.isArray(s.overlays)
+            ? Promise.all(
+                s.overlays.map(async (ov) => {
+                  const url = ov.blob ? await blobToDataUrl(ov.blob) : ov.url;
+                  return { ...ov, blob: undefined, url };
+                })
+              )
+            : Promise.resolve([]);
+          if (s.type === "voice" || s.type === "upload") {
+            const base64Url = s.blob ? blobToDataUrl(s.blob) : Promise.resolve(s.url);
+            return Promise.all([base64Url, overlays]).then(([url, ovs]) => ({
+              ...s,
+              blob: undefined,
+              url,
+              overlays: ovs,
+            }));
+          }
+          return overlays.then((ovs) => ({ ...s, overlays: ovs }));
+        })
+        .filter(Boolean),
     };
     Promise.all(payload.segments).then((segments) => {
       payload.segments = segments;
@@ -1854,6 +1887,26 @@
                 console.warn("Skipping external audio fetch for safety", s.url);
               }
             }
+            if (Array.isArray(s.overlays)) {
+              s.overlays = await Promise.all(
+                s.overlays.map(async (ov) => {
+                  if (ov.blob) return ov;
+                  if (ov.url && isSafeLocalUrl(ov.url)) {
+                    try {
+                      const res = await fetch(ov.url);
+                      if (res.ok) ov.blob = await res.blob();
+                    } catch {
+                      // ignore
+                    }
+                  } else {
+                    ov.blob = undefined;
+                  }
+                  return ov;
+                })
+              );
+            } else {
+              s.overlays = [];
+            }
             return s;
           })
         )
@@ -1894,10 +1947,13 @@
         })
       );
       const data = state.segments.map((s) => {
+        const overlays = Array.isArray(s.overlays)
+          ? s.overlays.map((ov) => ({ ...ov, blob: undefined }))
+          : [];
         if (s.type === "voice" || s.type === "upload") {
-          return { ...s, blob: undefined }; // avoid storing blobs
+          return { ...s, blob: undefined, overlays };
         }
-        return { ...s };
+        return { ...s, overlays };
       });
       localStorage.setItem("rs_show_segments", JSON.stringify(data));
     } catch (err) {
@@ -1911,7 +1967,7 @@
       if (!raw) return;
     const data = JSON.parse(raw);
     if (!Array.isArray(data)) return;
-    state.segments = data;
+    state.segments = data.map((s) => ({ ...s, overlays: Array.isArray(s.overlays) ? s.overlays : [] }));
     renderSegments();
   } catch (err) {
     console.warn("restore local failed", err);
