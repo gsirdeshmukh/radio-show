@@ -450,6 +450,44 @@ button:hover:not(:disabled) {
   opacity: 0.6;
 }
 
+.order-box {
+  margin-top: 12px;
+  border: 1px dashed var(--grid);
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.order-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.order-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.order-list li {
+  padding: 8px 10px;
+  border: 1px solid var(--grid);
+  background: var(--panel-strong);
+  cursor: grab;
+  font-size: 13px;
+}
+
+.order-list li.dragging {
+  opacity: 0.6;
+}
+
 .panel.show {
   grid-column: span 2;
 }

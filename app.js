@@ -80,6 +80,7 @@
     dom.addRecordingBtn = document.getElementById("add-recording-btn");
     dom.uploadBtn = document.getElementById("upload-btn");
     dom.uploadInput = document.getElementById("upload-input");
+    dom.orderList = document.getElementById("order-list");
     dom.playShowBtn = document.getElementById("play-show-btn");
     dom.stopShowBtn = document.getElementById("stop-show-btn");
     dom.fadeDuration = document.getElementById("fade-duration");
@@ -299,6 +300,7 @@
       state.deviceId = device_id;
       state.connected = true;
       setStatus(`spotify: connected (${device_id.slice(0, 6)}…)`, true);
+      transferPlaybackToDevice();
     });
 
     player.addListener("not_ready", ({ device_id }) => {
@@ -342,6 +344,22 @@
     state.connected = false;
     state.deviceId = null;
     setStatus("spotify: disconnected", false);
+  }
+
+  async function transferPlaybackToDevice() {
+    if (!state.token || !state.deviceId) return;
+    try {
+      await fetch("https://api.spotify.com/v1/me/player", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${state.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ device_ids: [state.deviceId], play: false }),
+      });
+    } catch (err) {
+      console.warn("Could not transfer playback", err);
+    }
   }
 
   function forgetToken() {
@@ -406,6 +424,7 @@
       const data = await res.json();
       state.token = data.access_token;
       dom.tokenInput.value = state.token;
+      sessionStorage.setItem("rs_token", state.token);
       setStatus("spotify: token acquired", false);
       // Clean up URL for nicer UX
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -877,6 +896,7 @@
     if (!state.segments.length) {
       dom.segments.innerHTML = `<li><div class="meta"><div class="title">Empty show</div><div class="subtitle">Add tracks and voice bites to start.</div></div></li>`;
       dom.showLength.textContent = "0:00";
+      renderOrderList();
       return;
     }
     state.segments.forEach((segment, index) => {
@@ -888,32 +908,10 @@
       }
       const li = document.createElement("li");
       li.dataset.segmentId = segment.id;
-      li.draggable = true;
       li.addEventListener("click", () => {
         state.focusSegmentId = segment.id;
         document.querySelectorAll(".segments li").forEach((el) => el.classList.remove("focused"));
         li.classList.add("focused");
-      });
-      li.addEventListener("dragstart", (e) => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", String(index));
-        li.classList.add("dragging");
-      });
-      li.addEventListener("dragend", () => li.classList.remove("dragging"));
-      li.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-      });
-      li.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const from = Number(e.dataTransfer.getData("text/plain"));
-        const to = index;
-        if (Number.isNaN(from) || from === to) return;
-        const list = [...state.segments];
-        const [item] = list.splice(from, 1);
-        list.splice(to, 0, item);
-        state.segments = list;
-        renderSegments();
       });
       const meta = document.createElement("div");
       meta.className = "meta";
@@ -1188,10 +1186,6 @@
 
       const moves = document.createElement("div");
       moves.className = "seg-actions";
-      const dragHandle = document.createElement("span");
-      dragHandle.className = "drag-handle";
-      dragHandle.textContent = "☰";
-      dragHandle.title = "Drag to reorder";
       const audition = document.createElement("button");
       audition.textContent = "Cue Play";
       audition.title = "Audition from cue";
@@ -1227,7 +1221,6 @@
       moves.appendChild(down);
       moves.appendChild(talk);
       moves.appendChild(remove);
-      moves.appendChild(dragHandle);
 
       li.appendChild(meta);
       li.appendChild(controls);
@@ -1236,6 +1229,7 @@
     });
     renderShowLength();
     persistLocal();
+    renderOrderList();
     updateListenMeta();
   }
 
@@ -1243,6 +1237,45 @@
     const total = state.segments.reduce((sum, s) => sum + getSegmentLength(s), 0);
     dom.showLength.textContent = formatMs(total);
     dom.listenTitle && updateListenMeta();
+  }
+
+  function renderOrderList() {
+    if (!dom.orderList) return;
+    dom.orderList.innerHTML = "";
+    if (!state.segments.length) {
+      const li = document.createElement("li");
+      li.textContent = "No tracks yet.";
+      dom.orderList.appendChild(li);
+      return;
+    }
+    state.segments.forEach((s, idx) => {
+      const li = document.createElement("li");
+      li.draggable = true;
+      li.dataset.index = String(idx);
+      li.textContent = s.title || "Untitled";
+      li.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(idx));
+        li.classList.add("dragging");
+      });
+      li.addEventListener("dragend", () => li.classList.remove("dragging"));
+      li.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      });
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData("text/plain"));
+        const to = idx;
+        if (Number.isNaN(from) || from === to) return;
+        const list = [...state.segments];
+        const [item] = list.splice(from, 1);
+        list.splice(to, 0, item);
+        state.segments = list;
+        renderSegments();
+      });
+      dom.orderList.appendChild(li);
+    });
   }
 
   function checkbox(label, value, onChange) {
@@ -1282,6 +1315,7 @@
       return;
     }
     state.isPlaying = true;
+    dom.playShowBtn.textContent = "Playing…";
     dom.playShowBtn.disabled = true;
     dom.stopShowBtn.disabled = false;
     const ctx = getAudioContext();
@@ -1295,6 +1329,7 @@
       await playSegment(segment);
     }
     state.isPlaying = false;
+    dom.playShowBtn.textContent = "Play Show";
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
     setTicker(null);
@@ -1317,6 +1352,7 @@
     if (state.overlayRecorder) {
       stopTalkOver();
     }
+    dom.playShowBtn.textContent = "Play Show";
     dom.playShowBtn.disabled = false;
     dom.stopShowBtn.disabled = false;
     setTicker(null);
