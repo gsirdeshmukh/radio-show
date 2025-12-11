@@ -98,6 +98,7 @@
       state.deviceId = device_id;
       state.connected = true;
       setStatus(`spotify: connected (${device_id.slice(0, 6)}…)`, true);
+      transferPlaybackToDevice();
     });
     player.addListener("authentication_error", ({ message }) => {
       alert("Auth error: " + message);
@@ -109,6 +110,22 @@
       return;
     }
     state.player = player;
+  }
+
+  async function transferPlaybackToDevice() {
+    if (!state.token || !state.deviceId) return;
+    try {
+      await fetch("https://api.spotify.com/v1/me/player", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${state.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ device_ids: [state.deviceId], play: false }),
+      });
+    } catch (err) {
+      console.warn("Could not transfer playback", err);
+    }
   }
 
   async function handleFile(e) {
