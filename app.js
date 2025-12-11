@@ -1,14 +1,7 @@
 (() => {
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
   const DEFAULT_REDIRECT = "https://gsirdeshmukh.github.io/radio-show/";
-  const SCOPES = [
-    "streaming",
-    "user-modify-playback-state",
-    "user-read-playback-state",
-    "user-library-read",
-    "playlist-read-private",
-    "playlist-read-collaborative",
-  ].join(" ");
+  const SCOPES = ["streaming", "user-modify-playback-state", "user-read-playback-state"].join(" ");
 
   const state = {
     token: "",
@@ -205,9 +198,24 @@
     document.addEventListener("keydown", handleHotkeys);
   }
 
+  function showError(msg) {
+    if (!dom.error) {
+      dom.error = document.createElement("div");
+      dom.error.className = "error-banner";
+      document.body.appendChild(dom.error);
+    }
+    dom.error.textContent = msg;
+    dom.error.style.display = "block";
+  }
+
+  function hideError() {
+    if (dom.error) dom.error.style.display = "none";
+  }
+
   function setStatus(text, connected) {
     dom.status.textContent = text;
     dom.status.style.color = connected ? "#4cf1c5" : "#f75c87";
+    if (connected) hideError();
   }
 
   function setTicker(segment) {
