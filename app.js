@@ -1703,12 +1703,6 @@
       return;
     }
     try {
-      const startMs = (() => {
-        const playerState = state.player ? state.player.getCurrentState && state.player.getCurrentState() : null;
-        return playerState && typeof playerState.then === "function"
-          ? null
-          : (playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0);
-      })();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType });
       state.overlayRecorder = recorder;
@@ -1726,7 +1720,8 @@
       await state.player.setVolume(targetVol).catch(() => {});
       const playerState = await state.player.getCurrentState().catch(() => null);
       const currentPos = playerState && playerState.position != null ? playerState.position : segment.startMs ?? 0;
-      const overlayOffset = startMs != null ? startMs : currentPos;
+      const segmentStart = segment.startMs ?? 0;
+      const overlayOffset = Math.max(0, currentPos - segmentStart);
       await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${state.deviceId}`, {
         method: "PUT",
         headers: {
