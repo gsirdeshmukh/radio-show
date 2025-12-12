@@ -47,6 +47,7 @@ GitHub Pages example (free HTTPS):
 
 ## Supabase + profiles (scaffolded)
 - In the **Connect** panel, add your `Supabase URL` and `anon/public key` (stored in localStorage). A new **Publish to Supabase** button will send the full show JSON to an Edge Function named `create_session`.
+- For this hosted project, Supabase URL + anon key are baked in (`jduyihzjqpcczekhorrq`), so you don’t need to paste keys; they’re loaded automatically.
 - Spotify PKCE now requests `user-read-private` + `user-read-email`; after auth the app pulls your Spotify profile, shows your avatar/name in the header, and defaults the Host field. A `sync_spotify_profile` Edge Function is invoked when available.
 - Listener view uses a `list_sessions` Edge Function if Supabase is configured (falls back to `sessions/top-sessions.json`). Clicking a row will call `get_session` (when available) or fetch the provided JSON URL; Supabase Storage origins are allowed.
 - Suggested tables: `profiles` (user_id PK, display_name, avatar_url), `spotify_profiles` (user_id FK, spotify_id, display_name, avatar_url, email, country, product, last_sync_at), `sessions` (id/slug, title, host_user_id, host_name, genre, tags jsonb, duration_ms, track_count, cover_url, visibility, version, created_at, updated_at), `session_assets` (session_id, type, path, duration_ms), `session_stats` (session_id, plays, downloads, likes, last_played_at).

@@ -21,22 +21,10 @@ serve(async (req) => {
     return new Response("Missing payload.meta or payload.segments", { status: 400 });
   }
 
-  const authHeader = req.headers.get("Authorization") || "";
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  // Optional auth gate
-  let userId: string | null = null;
-  try {
-    const { data } = await supabase.auth.getUser();
-    userId = data.user?.id ?? null;
-  } catch {
-    userId = null;
-  }
-  if (!allowAnonCreate && !userId) {
-    return new Response("Auth required", { status: 401 });
-  }
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  // Optional auth gate: disabled by default when allowAnonCreate=true
+  const userId: string | null = allowAnonCreate ? null : await getUserId(req, supabase);
+  if (!allowAnonCreate && !userId) return new Response("Auth required", { status: 401 });
 
   const sessionId = crypto.randomUUID();
   const slug = slugify(payload.meta.title || "session", sessionId);
@@ -94,4 +82,17 @@ function slugify(title: string, fallbackId: string) {
     .slice(0, 50);
   const suffix = fallbackId.slice(0, 8);
   return base ? `${base}-${suffix}` : `session-${suffix}`;
+}
+
+async function getUserId(req: Request, supabase: ReturnType<typeof createClient>) {
+  try {
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.toLowerCase().startsWith("bearer ")) return null;
+    const token = authHeader.slice(7);
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error) return null;
+    return data.user?.id ?? null;
+  } catch {
+    return null;
+  }
 }

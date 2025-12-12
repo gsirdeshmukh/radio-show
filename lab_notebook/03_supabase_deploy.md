@@ -19,4 +19,5 @@ Status (run):
 - Deployed functions: create_session, list_sessions, get_session, record_event, sync_spotify_profile.
 - Secrets set with PROJECT_URL + SERVICE_ROLE_KEY + buckets + anon create enabled.
 - Buckets created.
+- Fixed RLS issue in create_session by running functions with service role (no caller auth header) and applied schema via migration. Verified create_session works via curl.
 5) Optional: create public Storage buckets `sessions` and `assets` in dashboard (public read).
