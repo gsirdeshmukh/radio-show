@@ -22,6 +22,7 @@ supabase functions deploy get_session
 supabase functions deploy record_event
 supabase functions deploy sync_spotify_profile
 ```
+These functions are intended to be callable from the public frontend. Ensure JWT verification is disabled when deploying (either keep `verify_jwt = false` in each `supabase/functions/*/config.toml` or pass `--no-verify-jwt` to `supabase functions deploy`).
 
 ## Database schema
 Apply `supabase/schema.sql` in the SQL editor or `supabase db push`.
