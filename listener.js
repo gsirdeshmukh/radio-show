@@ -1,6 +1,9 @@
 (() => {
   const SUPABASE_URL_KEY = "rs_supabase_url";
   const SUPABASE_ANON_KEY = "rs_supabase_anon";
+  const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
+  const DEFAULT_SUPABASE_ANON =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
 
   const state = {
     token: "",
@@ -70,8 +73,10 @@
 
   function getSupabaseClient() {
     if (typeof window === "undefined" || !window.supabase) return null;
-    const url = localStorage.getItem(SUPABASE_URL_KEY) || "";
-    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || "";
+    const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
+    if (!localStorage.getItem(SUPABASE_URL_KEY) && url) localStorage.setItem(SUPABASE_URL_KEY, url);
+    if (!localStorage.getItem(SUPABASE_ANON_KEY) && anon) localStorage.setItem(SUPABASE_ANON_KEY, anon);
     if (!url || !anon) return null;
     if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
       return state.supabase;
