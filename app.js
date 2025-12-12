@@ -143,7 +143,6 @@
 		    dom.sessionsList = document.getElementById("sessions-list");
 		    dom.sessionsSearch = document.getElementById("sessions-search");
 		    dom.sessionsSort = document.getElementById("sessions-sort");
-		    dom.sessionsMine = document.getElementById("sessions-mine");
 		    dom.sessionsRefresh = document.getElementById("sessions-refresh");
 		    dom.sessionsStatus = document.getElementById("sessions-status");
 		  }
@@ -276,9 +275,6 @@
 		        loadSupabaseSessions();
 		      });
 		    }
-		    if (dom.sessionsMine) {
-		      dom.sessionsMine.addEventListener("change", () => loadSupabaseSessions());
-		    }
 		    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
 		    }
 	    document.addEventListener("keydown", handleHotkeys);
@@ -303,7 +299,10 @@
 
   function setStatus(text, connected) {
     dom.status.textContent = text;
-    dom.status.style.color = connected ? "#4cf1c5" : "#f75c87";
+    const styles = getComputedStyle(document.documentElement);
+    const accent = (styles.getPropertyValue("--accent") || "").trim() || "#6af5c8";
+    const alert = (styles.getPropertyValue("--accent-2") || "").trim() || "#ff6ea9";
+    dom.status.style.color = connected ? accent : alert;
     if (connected) hideError();
   }
 
@@ -447,11 +446,10 @@
 			    const client = state.supabase;
 			    if (!client || state.supabaseAuthSub) return;
 			    try {
-			      const { data } = client.auth.onAuthStateChange((_event, session) => {
-			        state.supabaseSession = session || null;
-			        renderSupabaseAuthStatus();
-			        if (dom.sessionsMine?.checked) loadSupabaseSessions();
-			      });
+				      const { data } = client.auth.onAuthStateChange((_event, session) => {
+				        state.supabaseSession = session || null;
+				        renderSupabaseAuthStatus();
+				      });
 			      state.supabaseAuthSub = data?.subscription || null;
 			      client.auth
 			        .getSession()
@@ -465,23 +463,15 @@
 			    }
 			  }
 
-			  function renderSupabaseAuthStatus() {
-			    const email = state.supabaseSession?.user?.email || "";
-			    const authed = !!email;
-			    if (dom.supabaseAuthStatus) {
-			      dom.supabaseAuthStatus.textContent = authed ? `supabase: ${email}` : "supabase: signed out";
-			    }
-			    if (dom.supabaseSignInBtn) dom.supabaseSignInBtn.disabled = authed;
-			    if (dom.supabaseSignOutBtn) dom.supabaseSignOutBtn.disabled = !authed;
-			    if (dom.sessionsMine) {
-			      const wasChecked = dom.sessionsMine.checked;
-			      dom.sessionsMine.disabled = !authed;
-			      if (!authed && wasChecked) {
-			        dom.sessionsMine.checked = false;
-			        loadSupabaseSessions();
-			      }
-			    }
-			  }
+				  function renderSupabaseAuthStatus() {
+				    const email = state.supabaseSession?.user?.email || "";
+				    const authed = !!email;
+				    if (dom.supabaseAuthStatus) {
+				      dom.supabaseAuthStatus.textContent = authed ? `supabase: ${email}` : "supabase: signed out";
+				    }
+				    if (dom.supabaseSignInBtn) dom.supabaseSignInBtn.disabled = authed;
+				    if (dom.supabaseSignOutBtn) dom.supabaseSignOutBtn.disabled = !authed;
+				  }
 
 			  function getSupabaseAuthHeaders() {
 			    const token = state.supabaseSession?.access_token || "";
@@ -651,10 +641,9 @@
 		    try {
 		      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
 		      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
-		      const host_user_id = dom.sessionsMine?.checked ? state.supabaseSession?.user?.id || null : null;
 		      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
 		      const { data, error } = await client.functions.invoke("list_sessions", {
-		        body: { q, sort: functionSort, limit: 50, host_user_id },
+		        body: { q, sort: functionSort, limit: 50 },
 		      });
 		      if (error) throw error;
 	      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
