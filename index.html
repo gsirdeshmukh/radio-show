@@ -15,11 +15,13 @@
 </head>
 <body>
   <div class="noise"></div>
-  <header class="hero">
-    <div class="title-block">
-      <p class="tag">interplanetary radio show</p>
-      <h1>RADIO-LAB</h1>
-      <p class="lede">curate, speak, share.</p>
+  <header class="hero-shell">
+    <div class="hero-card">
+      <div class="title-block">
+        <p class="tag">interplanetary radio show</p>
+        <h1>RADIO-LAB</h1>
+        <p class="lede">curate, speak, share.</p>
+      </div>
       <div class="status-row">
         <div class="status-chip" id="spotify-status">spotify: disconnected</div>
         <div id="ticker" class="ticker"><span>now playing: —</span></div>
@@ -28,93 +30,109 @@
         <button id="connect-toggle" class="ghost small">Auth Panel</button>
       </div>
     </div>
-    <div class="profile-chip" id="profile-chip" title="Linked Spotify account">
-      <div class="profile-avatar" id="profile-avatar"></div>
-      <div class="profile-name" id="profile-name">Not linked</div>
-    </div>
-    <div class="chip-stack">
-      <!-- <div class="chip">vocal fader</div> -->
-      <!-- <div class="chip">playlist pilot</div> -->
-      <!-- <div class="chip">minimal + 2d</div> -->
-    </div>
-    <div class="theme-switch" id="theme-switch">
-      <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
-      <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
-      <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
-      <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
-    </div>
-  </header>
 
-  <main class="grid">
-    <section class="panel connect floating collapsed" id="connect-panel">
-      <div class="panel-head">
-        <h2>Connect</h2>
-        <span class="hint">needs a Spotify OAuth token</span>
-        <button id="connect-close" class="ghost small">Close</button>
-      </div>
-      <label class="field">
-        <span>Client ID (PKCE)</span>
-        <input id="client-id-input" type="text" placeholder="Spotify app client ID" autocomplete="off" />
-      </label>
-      <label class="field">
-        <span>Redirect URI</span>
-        <input id="redirect-input" type="text" placeholder="https://your-site/callback" autocomplete="off" />
-      </label>
-      <div class="row">
-        <button id="auth-btn" class="primary">Authorize with Spotify (PKCE)</button>
-      </div>
-      <label class="field">
-        <span>OAuth token</span>
-        <input id="token-input" type="password" placeholder="Bearer token with streaming + playback scopes" autocomplete="off" />
-      </label>
-      <div class="row">
-        <button id="connect-btn" class="primary">Connect Player</button>
-        <button id="disconnect-btn" class="ghost">Disconnect</button>
-        <button id="forget-token-btn" class="ghost small">Forget Token</button>
-      </div>
-      <div class="field">
-        <span>Show volume</span>
-        <input id="master-volume" type="range" min="0" max="100" value="80" />
-      </div>
-      <p class="note">Scopes needed: streaming, user-modify-playback-state, user-read-playback-state, user-read-private, user-read-email (for profile sync). The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
-
-      <div class="divider"></div>
-      <div class="subhead">Supabase</div>
-      <label class="field">
-        <span>Supabase URL</span>
-        <input id="supabase-url" type="text" placeholder="https://xxxx.supabase.co" autocomplete="off" />
-      </label>
-      <label class="field">
-        <span>Supabase anon key</span>
-        <input id="supabase-key" type="password" placeholder="anon/public key" autocomplete="off" />
-      </label>
-      <div class="subhead">Supabase Auth</div>
-      <label class="field">
-        <span>Email</span>
-        <input id="supabase-email" type="text" placeholder="you@example.com" autocomplete="email" />
-      </label>
-      <div class="row wrap">
-        <button id="supabase-signin" class="ghost small">Email Link</button>
-        <button id="supabase-signout" class="ghost small" disabled>Sign Out</button>
-        <span class="hint" id="supabase-auth-status">supabase: signed out</span>
-      </div>
-    </section>
-
-    <section class="panel search">
-      <div class="panel-head">
+    <section class="search-wrap">
+      <div class="panel-head compact">
         <h2>Find Tracks</h2>
         <span class="hint">search Spotify</span>
       </div>
-      <form id="search-form" class="row">
+      <form id="search-form" class="row search-row">
         <input id="search-input" type="text" placeholder="Search tracks..." autocomplete="off" />
         <button type="submit" class="primary">Search</button>
       </form>
-      <div class="row wrap">
+      <div class="row wrap search-actions">
         <button id="library-btn" class="ghost small">Saved Tracks</button>
         <button id="playlists-btn" class="ghost small">My Playlists</button>
         <button id="clear-results-btn" class="ghost small">Clear</button>
       </div>
-      <ul id="results" class="list"></ul>
+      <ul id="results" class="list compact-list"></ul>
+    </section>
+
+    <div class="profile-stack">
+      <div class="profile-chip" id="profile-chip" title="Linked Spotify account">
+        <div class="profile-avatar" id="profile-avatar"></div>
+        <div class="profile-name" id="profile-name">Not linked</div>
+      </div>
+      <div class="theme-switch" id="theme-switch">
+        <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
+        <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
+        <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
+        <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel connect floating collapsed" id="connect-panel">
+    <div class="panel-head">
+      <h2>Connect</h2>
+      <span class="hint">needs a Spotify OAuth token</span>
+      <button id="connect-close" class="ghost small">Close</button>
+    </div>
+    <label class="field">
+      <span>Client ID (PKCE)</span>
+      <input id="client-id-input" type="text" placeholder="Spotify app client ID" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>Redirect URI</span>
+      <input id="redirect-input" type="text" placeholder="https://your-site/callback" autocomplete="off" />
+    </label>
+    <div class="row">
+      <button id="auth-btn" class="primary">Authorize with Spotify (PKCE)</button>
+    </div>
+    <label class="field">
+      <span>OAuth token</span>
+      <input id="token-input" type="password" placeholder="Bearer token with streaming + playback scopes" autocomplete="off" />
+    </label>
+    <div class="row">
+      <button id="connect-btn" class="primary">Connect Player</button>
+      <button id="disconnect-btn" class="ghost">Disconnect</button>
+      <button id="forget-token-btn" class="ghost small">Forget Token</button>
+    </div>
+    <div class="field">
+      <span>Show volume</span>
+      <input id="master-volume" type="range" min="0" max="100" value="80" />
+    </div>
+    <p class="note">Scopes needed: streaming, user-modify-playback-state, user-read-playback-state, user-read-private, user-read-email (for profile sync). The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
+
+    <div class="divider"></div>
+    <div class="subhead">Supabase</div>
+    <label class="field">
+      <span>Supabase URL</span>
+      <input id="supabase-url" type="text" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>Supabase anon key</span>
+      <input id="supabase-key" type="password" placeholder="anon/public key" autocomplete="off" />
+    </label>
+    <div class="subhead">Supabase Auth</div>
+    <label class="field">
+      <span>Email</span>
+      <input id="supabase-email" type="text" placeholder="you@example.com" autocomplete="email" />
+    </label>
+    <div class="row wrap">
+      <button id="supabase-signin" class="ghost small">Email Link</button>
+      <button id="supabase-signout" class="ghost small" disabled>Sign Out</button>
+      <span class="hint" id="supabase-auth-status">supabase: signed out</span>
+    </div>
+  </section>
+
+  <main class="workspace">
+    <section class="panel sessions" id="sessions-panel">
+      <div class="panel-head">
+        <h2>Sessions</h2>
+        <span class="hint" id="sessions-status">—</span>
+      </div>
+      <div class="row wrap">
+        <input id="sessions-search" type="text" placeholder="Search sessions" />
+        <select id="sessions-sort">
+          <option value="new">Newest</option>
+          <option value="plays">Most plays</option>
+          <option value="downloads">Most downloads</option>
+          <option value="likes">Most likes</option>
+        </select>
+        <button id="sessions-refresh" class="ghost small">Refresh</button>
+      </div>
+      <ul id="sessions-list" class="list"></ul>
     </section>
 
     <section class="panel recorder">
@@ -145,11 +163,11 @@
       </div>
     </section>
 
-	    <section class="panel show">
-	      <div class="panel-head">
-	        <h2>Show Builder</h2>
-	        <span class="hint" id="show-length">0:00</span>
-	      </div>
+    <section class="panel show">
+      <div class="panel-head">
+        <h2>Show Builder</h2>
+        <span class="hint" id="show-length">0:00</span>
+      </div>
       <div class="row wrap">
         <label class="field">
           <span>Session title</span>
@@ -185,56 +203,34 @@
         <button id="save-tracks-btn" class="ghost">Save Tracks Only</button>
         <input id="load-input" type="file" accept="application/json" style="display:none" />
       </div>
-	      <ul id="segments" class="list segments"></ul>
-	    </section>
-
-	    <section class="panel sessions" id="sessions-panel">
-	      <div class="panel-head">
-	        <h2>Sessions</h2>
-	        <span class="hint" id="sessions-status">—</span>
-	      </div>
-      <div class="row wrap">
-        <input id="sessions-search" type="text" placeholder="Search sessions" />
-        <select id="sessions-sort">
-          <option value="new">Newest</option>
-          <option value="plays">Most plays</option>
-          <option value="downloads">Most downloads</option>
-          <option value="likes">Most likes</option>
-        </select>
-        <label class="field small">
-          <span>Mine</span>
-          <input id="sessions-mine" type="checkbox" />
-        </label>
-        <button id="sessions-refresh" class="ghost small">Refresh</button>
-      </div>
-	      <ul id="sessions-list" class="list"></ul>
-	    </section>
-
-	    <section class="panel listen">
-	      <div class="panel-head">
-	        <h2>Listen Mode</h2>
-	        <span class="hint">play current or load a show file</span>
-      </div>
-      <div class="row wrap">
-        <input id="listen-file" type="file" accept="application/json" />
-        <button id="listen-load" class="ghost">Load Show File</button>
-        <button id="listen-play" class="primary">Play Current</button>
-        <button id="listen-stop" class="ghost">Stop</button>
-      </div>
-      <div class="row wrap listen-now">
-        <div class="cover" id="listen-cover"></div>
-        <div class="now-text">
-          <div class="title" id="listen-title">—</div>
-          <div class="subtitle" id="listen-subtitle">—</div>
-          <div class="subtitle" id="listen-note"></div>
-          <div class="progress">
-            <div class="progress-bar"><div id="listen-progress"></div></div>
-            <div class="progress-bar total"><div id="listen-total"></div></div>
-          </div>
-        </div>
-      </div>
+      <ul id="segments" class="list segments"></ul>
     </section>
   </main>
+
+  <section class="panel listen">
+    <div class="panel-head">
+      <h2>Listen Mode</h2>
+      <span class="hint">play current or load a show file</span>
+    </div>
+    <div class="row wrap">
+      <input id="listen-file" type="file" accept="application/json" />
+      <button id="listen-load" class="ghost">Load Show File</button>
+      <button id="listen-play" class="primary">Play Current</button>
+      <button id="listen-stop" class="ghost">Stop</button>
+    </div>
+    <div class="row wrap listen-now">
+      <div class="cover" id="listen-cover"></div>
+      <div class="now-text">
+        <div class="title" id="listen-title">—</div>
+        <div class="subtitle" id="listen-subtitle">—</div>
+        <div class="subtitle" id="listen-note"></div>
+        <div class="progress">
+          <div class="progress-bar"><div id="listen-progress"></div></div>
+          <div class="progress-bar total"><div id="listen-total"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <noscript class="noscript">Enable JavaScript to use the radio builder.</noscript>
   <script src="app.js" defer></script>
