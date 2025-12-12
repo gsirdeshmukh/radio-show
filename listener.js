@@ -203,9 +203,34 @@
 		    }
 		  }
 
-		  function isSessionLiked(sessionId) {
-		    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
-		  }
+			  function isSessionLiked(sessionId) {
+			    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
+			  }
+
+			  async function describeFunctionsInvokeError(err) {
+			    if (!err) return "Unknown error";
+			    const base = err?.message || String(err);
+			    const ctx = err?.context || null;
+			    const status = typeof ctx?.status === "number" ? ctx.status : null;
+			    let body = "";
+			    try {
+			      if (ctx && typeof ctx.clone === "function") {
+			        body = await ctx.clone().text();
+			      } else if (ctx && typeof ctx.text === "function") {
+			        body = await ctx.text();
+			      }
+			    } catch {
+			      body = "";
+			    }
+			    body = (body || "").trim();
+			    if (body.length > 600) body = `${body.slice(0, 600)}…`;
+			    const details = err?.details ? String(err.details) : "";
+			    const bits = [];
+			    if (status) bits.push(`HTTP ${status}`);
+			    if (details) bits.push(details);
+			    if (body && body !== base) bits.push(body);
+			    return bits.length ? `${base} (${bits.join(" · ")})` : base;
+			  }
 
 			  async function likeSession(sessionId) {
 			    if (!sessionId || isSessionLiked(sessionId)) return;
@@ -219,11 +244,11 @@
 			        headers: getSupabaseAuthHeaders(),
 			        body: { id: sessionId, type: "like" },
 			      });
-			      if (error) throw error;
-		      state.likedSessions.add(sessionId);
-		      persistLikedSessions();
-		      const row = (state.topSessions || []).find((s) => s?.id === sessionId);
-		      if (row) {
+			      if (error) throw new Error(await describeFunctionsInvokeError(error));
+			      state.likedSessions.add(sessionId);
+			      persistLikedSessions();
+			      const row = (state.topSessions || []).find((s) => s?.id === sessionId);
+			      if (row) {
 		        row.likes = (row.likes ?? 0) + 1;
 		        patchTopSessionSubtitle(sessionId);
 		      }
@@ -249,7 +274,11 @@
  		    const client = getSupabaseClient();
  		    if (!client || !id) return;
 		    try {
-		      await client.functions.invoke("record_event", { headers: getSupabaseAuthHeaders(), body: { id, type } });
+		      const { error } = await client.functions.invoke("record_event", {
+		        headers: getSupabaseAuthHeaders(),
+		        body: { id, type },
+		      });
+		      if (error) console.warn("Supabase record_event failed", await describeFunctionsInvokeError(error));
 		    } catch (err) {
 		      console.warn("Supabase record_event failed", err);
 		    }
@@ -481,29 +510,32 @@
     });
   }
 
-	  async function loadSessionEntry(entry) {
-	    try {
-	      state.currentSessionId = entry?.id || null;
-	      const client = getSupabaseClient();
-	      if (client && (entry?.id || entry?.slug) && !entry?.url && !entry?.json_url) {
-	        const { data, error } = await client.functions.invoke("get_session", {
-	          body: { id: entry.id, slug: entry.slug },
-	        });
-	        if (error) throw error;
-	        if (data?.id) state.currentSessionId = data.id;
-	        const resolved = resolveSessionUrl(data);
-	        if (resolved) {
-	          await loadSessionFromUrl(resolved);
-	          return;
-        }
-      }
-      const resolved = resolveSessionUrl(entry);
-      if (!resolved) throw new Error("No session URL");
-      await loadSessionFromUrl(resolved);
-    } catch (err) {
-      alert(`Could not load session: ${err.message}`);
-    }
-  }
+		  async function loadSessionEntry(entry) {
+		    try {
+		      state.currentSessionId = entry?.id || null;
+		      const client = getSupabaseClient();
+		      const resolvedFromList = resolveSessionUrl(entry);
+		      const hasFetchableUrl =
+		        typeof resolvedFromList === "string" &&
+		        (resolvedFromList.startsWith("http") || resolvedFromList.startsWith("data:"));
+		      if (client && (entry?.id || entry?.slug) && !hasFetchableUrl) {
+		        const { data, error } = await client.functions.invoke("get_session", {
+		          body: { id: entry.id, slug: entry.slug },
+		        });
+		        if (error) throw error;
+		        if (data?.id) state.currentSessionId = data.id;
+		        const resolved = resolveSessionUrl(data);
+		        if (resolved) {
+		          await loadSessionFromUrl(resolved);
+		          return;
+	        }
+	      }
+	      if (!resolvedFromList) throw new Error("No session URL");
+	      await loadSessionFromUrl(resolvedFromList);
+	    } catch (err) {
+	      alert(`Could not load session: ${err.message}`);
+	    }
+	  }
 
   function resolveSessionUrl(entry) {
     if (!entry) return null;
