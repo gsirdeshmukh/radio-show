@@ -4,9 +4,17 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 const supabaseUrl = Deno.env.get("PROJECT_URL") || Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+};
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
   let body: any = {};
   try {
@@ -55,7 +63,7 @@ serve(async (req) => {
 
   const { data, error } = await query.range(offset, offset + limit - 1);
   if (error) {
-    return new Response(error.message, { status: 500 });
+    return new Response(error.message, { status: 500, headers: corsHeaders });
   }
 
   const sessions = (data || []).map((row: any) => ({
@@ -73,5 +81,5 @@ serve(async (req) => {
     created_at: row.created_at,
   }));
 
-  return new Response(JSON.stringify({ sessions }), { status: 200, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ sessions }), { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } });
 });

@@ -3,20 +3,27 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const supabaseUrl = Deno.env.get("PROJECT_URL") || Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+};
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
   }
   const spotifyId = body.spotify_id;
   if (!spotifyId) {
-    return new Response("spotify_id required", { status: 400 });
+    return new Response("spotify_id required", { status: 400, headers: corsHeaders });
   }
 
   const authHeader = req.headers.get("Authorization") || "";
@@ -53,5 +60,8 @@ serve(async (req) => {
       });
   }
 
-  return new Response(JSON.stringify({ ok: true, user_id: userId }), { status: 200, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, user_id: userId }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
 });

@@ -5,20 +5,28 @@ const supabaseUrl = Deno.env.get("PROJECT_URL") || Deno.env.get("SUPABASE_URL")!
 const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const sessionBucket = Deno.env.get("SESSION_BUCKET") || "sessions";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+};
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
   }
   const id: string | null = body.id || null;
   const slug: string | null = body.slug || null;
   if (!id && !slug) {
-    return new Response("id or slug required", { status: 400 });
+    return new Response("id or slug required", { status: 400, headers: corsHeaders });
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -29,7 +37,7 @@ serve(async (req) => {
   query = id ? query.eq("id", id) : query.eq("slug", slug);
   const { data, error } = await query.single();
   if (error) {
-    return new Response(error.message, { status: 404 });
+    return new Response(error.message, { status: 404, headers: corsHeaders });
   }
 
   const jsonPath = data.storage_path;
@@ -48,6 +56,6 @@ serve(async (req) => {
       json_url: signed?.signedUrl || null,
       stats: data.session_stats?.[0] || { plays: 0, downloads: 0, likes: 0 },
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
+    { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } },
   );
 });
