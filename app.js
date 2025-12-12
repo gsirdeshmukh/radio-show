@@ -8,8 +8,12 @@
     "user-library-read",
     "playlist-read-private",
     "playlist-read-collaborative",
+    "user-read-private",
+    "user-read-email",
   ];
   const SCOPES = REQUIRED_SCOPES.join(" ");
+  const SUPABASE_URL_KEY = "rs_supabase_url";
+  const SUPABASE_ANON_KEY = "rs_supabase_anon";
 
   const state = {
     token: "",
@@ -43,6 +47,10 @@
     overlayOriginalVolume: null,
     overlayMonitor: null,
     overlayRecording: false,
+    supabase: null,
+    supabaseUrl: "",
+    supabaseKey: "",
+    spotifyProfile: null,
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -90,6 +98,7 @@
     dom.connectPanel = document.getElementById("connect-panel");
     dom.themeSwitch = document.getElementById("theme-switch");
     dom.saveShowBtn = document.getElementById("save-show-btn");
+    dom.publishShowBtn = document.getElementById("publish-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
     dom.saveTracksBtn = document.getElementById("save-tracks-btn");
     dom.loadInput = document.getElementById("load-input");
@@ -109,6 +118,10 @@
     dom.listenProgress = document.getElementById("listen-progress");
     dom.listenTotal = document.getElementById("listen-total");
     dom.multiSeed = document.getElementById("multi-seed");
+    dom.supabaseUrlInput = document.getElementById("supabase-url");
+    dom.supabaseKeyInput = document.getElementById("supabase-key");
+    dom.profileAvatar = document.getElementById("profile-avatar");
+    dom.profileName = document.getElementById("profile-name");
   }
 
   function showInlineRecommendations(seedSegment, recs) {
@@ -178,6 +191,7 @@
     dom.playShowBtn.addEventListener("click", () => playShow());
     dom.stopShowBtn.addEventListener("click", stopShow);
     dom.saveShowBtn.addEventListener("click", () => exportShow({ tracksOnly: false }));
+    dom.publishShowBtn && dom.publishShowBtn.addEventListener("click", publishToSupabase);
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
     dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
     dom.loadInput.addEventListener("change", handleImport);
@@ -204,9 +218,16 @@
     dom.fadeDuration.addEventListener("input", (e) => {
       state.fadeMs = Number(e.target.value);
     });
+    if (dom.supabaseUrlInput) {
+      dom.supabaseUrlInput.addEventListener("change", initSupabaseClient);
+    }
+    if (dom.supabaseKeyInput) {
+      dom.supabaseKeyInput.addEventListener("change", initSupabaseClient);
+    }
     document.addEventListener("keydown", handleHotkeys);
     dom.status &&
-      (dom.status.title = "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state, user-library-read, playlist-read-private, playlist-read-collaborative");
+      (dom.status.title =
+        "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state, user-library-read, playlist-read-private, playlist-read-collaborative, user-read-private, user-read-email");
   }
 
   function showError(msg) {
@@ -275,10 +296,57 @@
     root.style.setProperty("--bg", t.bg);
   }
 
+  function hydrateSupabaseConfig() {
+    const storedUrl = localStorage.getItem(SUPABASE_URL_KEY) || "";
+    const storedKey = localStorage.getItem(SUPABASE_ANON_KEY) || "";
+    if (dom.supabaseUrlInput && !dom.supabaseUrlInput.value && storedUrl) {
+      dom.supabaseUrlInput.value = storedUrl;
+    }
+    if (dom.supabaseKeyInput && !dom.supabaseKeyInput.value && storedKey) {
+      dom.supabaseKeyInput.value = storedKey;
+    }
+    initSupabaseClient();
+  }
+
+  function initSupabaseClient() {
+    if (typeof window === "undefined" || !window.supabase) {
+      state.supabase = null;
+      return null;
+    }
+    const url =
+      (dom.supabaseUrlInput?.value || "").trim() || localStorage.getItem(SUPABASE_URL_KEY) || "";
+    const anon =
+      (dom.supabaseKeyInput?.value || "").trim() || localStorage.getItem(SUPABASE_ANON_KEY) || "";
+    if (!url || !anon) {
+      state.supabase = null;
+      state.supabaseUrl = "";
+      state.supabaseKey = "";
+      localStorage.removeItem(SUPABASE_URL_KEY);
+      localStorage.removeItem(SUPABASE_ANON_KEY);
+      return null;
+    }
+    if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
+      return state.supabase;
+    }
+    try {
+      state.supabase = window.supabase.createClient(url, anon);
+      state.supabaseUrl = url;
+      state.supabaseKey = anon;
+      localStorage.setItem(SUPABASE_URL_KEY, url);
+      localStorage.setItem(SUPABASE_ANON_KEY, anon);
+      return state.supabase;
+    } catch (err) {
+      console.warn("Supabase init failed", err);
+      state.supabase = null;
+      return null;
+    }
+  }
+
   // Initialize defaults and parse callback params
   document.addEventListener("DOMContentLoaded", () => {
     assignDom();
     bindEvents();
+    renderProfileChip(null);
     setStatus("spotify: disconnected", false);
     // Always use the GitHub Pages redirect for PKCE.
     state.redirectUri = DEFAULT_REDIRECT;
@@ -286,6 +354,7 @@
     const storedClientId = sessionStorage.getItem("rs_client_id");
     dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
     state.clientId = dom.clientIdInput.value;
+    hydrateSupabaseConfig();
     applySavedTheme();
     handlePkceCallback();
     restoreLocal();
@@ -294,6 +363,7 @@
     if (storedToken) {
       dom.tokenInput.value = storedToken;
       state.token = storedToken;
+      fetchSpotifyProfile().catch(() => {});
     }
     updateListenMeta();
   }, { once: true });
@@ -305,6 +375,7 @@
       return;
     }
     sessionStorage.setItem("rs_token", state.token);
+    fetchSpotifyProfile().catch(() => {});
     await sdkReady;
     if (state.player) {
       state.player.disconnect();
@@ -386,6 +457,59 @@
     sessionStorage.removeItem("rs_token");
     state.token = "";
     setStatus("spotify: token cleared", false);
+    state.spotifyProfile = null;
+    renderProfileChip(null);
+  }
+
+  function renderProfileChip(profile) {
+    if (!dom.profileAvatar || !dom.profileName) return;
+    const name = profile?.display_name || profile?.id || "Not linked";
+    dom.profileName.textContent = name;
+    const img = profile?.images?.[0]?.url;
+    dom.profileAvatar.style.backgroundImage = img
+      ? `url(${img})`
+      : "linear-gradient(120deg, var(--accent), var(--accent-2))";
+  }
+
+  async function fetchSpotifyProfile() {
+    if (!state.token) return null;
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me", {
+        headers: { Authorization: `Bearer ${state.token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const profile = await res.json();
+      state.spotifyProfile = profile;
+      renderProfileChip(profile);
+      if (dom.sessionHost && !dom.sessionHost.value) {
+        dom.sessionHost.value = profile.display_name || profile.id || "";
+      }
+      syncProfileToSupabase(profile).catch(() => {});
+      return profile;
+    } catch (err) {
+      console.warn("spotify profile fetch failed", err);
+      return null;
+    }
+  }
+
+  async function syncProfileToSupabase(profile) {
+    if (!profile) return;
+    const client = initSupabaseClient();
+    if (!client) return;
+    try {
+      await client.functions.invoke("sync_spotify_profile", {
+        body: {
+          spotify_id: profile.id,
+          display_name: profile.display_name,
+          email: profile.email,
+          avatar_url: profile.images?.[0]?.url,
+          country: profile.country,
+          product: profile.product,
+        },
+      });
+    } catch (err) {
+      console.warn("supabase profile sync failed", err);
+    }
   }
 
   async function startPkceAuth() {
@@ -452,6 +576,7 @@
       dom.tokenInput.value = state.token;
       sessionStorage.setItem("rs_token", state.token);
       setStatus("spotify: token acquired", false);
+      fetchSpotifyProfile().catch(() => {});
       // Clean up URL for nicer UX
       window.history.replaceState({}, document.title, window.location.pathname);
       // Auto-connect the player after PKCE succeeds.
@@ -1944,7 +2069,17 @@
     }
   }
 
-  function exportShow({ tracksOnly }) {
+  async function exportShow({ tracksOnly }) {
+    try {
+      const payload = await buildSessionPayload({ tracksOnly });
+      downloadPayload(payload, tracksOnly);
+    } catch (err) {
+      console.error("Export failed", err);
+      alert("Export failed; see console for details.");
+    }
+  }
+
+  async function buildSessionPayload({ tracksOnly }) {
     const payload = {
       version: 2,
       tracksOnly,
@@ -1978,17 +2113,37 @@
         })
         .filter(Boolean),
     };
-    Promise.all(payload.segments).then((segments) => {
-      payload.segments = segments;
-      const dataStr = JSON.stringify(payload);
-      const blob = new Blob([dataStr], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = tracksOnly ? "radio-show-tracks.json" : "radio-show-full.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    payload.segments = await Promise.all(payload.segments);
+    return payload;
+  }
+
+  function downloadPayload(payload, tracksOnly) {
+    const dataStr = JSON.stringify(payload);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = tracksOnly ? "radio-show-tracks.json" : "radio-show-full.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function publishToSupabase() {
+    const client = initSupabaseClient();
+    if (!client) {
+      alert("Set Supabase URL + anon key first.");
+      return;
+    }
+    try {
+      const payload = await buildSessionPayload({ tracksOnly: false });
+      const { data, error } = await client.functions.invoke("create_session", { body: { payload } });
+      if (error) throw error;
+      const slug = data?.slug || data?.id || "";
+      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
+    } catch (err) {
+      console.error("Supabase publish failed", err);
+      alert("Supabase publish failed; check console for details.");
+    }
   }
 
   async function handleImport(e) {

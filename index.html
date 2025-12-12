@@ -4,13 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio Show — Spotify + Voice</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com wss://*.spotify.com; img-src 'self' data: https://i.scdn.co; media-src 'self' data: blob:; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://sdk.scdn.co/spotify-player.js" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div class="noise"></div>
@@ -26,6 +27,10 @@
       <div class="top-actions">
         <button id="connect-toggle" class="ghost small">Auth Panel</button>
       </div>
+    </div>
+    <div class="profile-chip" id="profile-chip" title="Linked Spotify account">
+      <div class="profile-avatar" id="profile-avatar"></div>
+      <div class="profile-name" id="profile-name">Not linked</div>
     </div>
     <div class="chip-stack">
       <!-- <div class="chip">vocal fader</div> -->
@@ -71,7 +76,15 @@
         <span>Show volume</span>
         <input id="master-volume" type="range" min="0" max="100" value="80" />
       </div>
-      <p class="note">Scopes needed for playback: streaming, user-modify-playback-state, user-read-playback-state. The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
+      <div class="field">
+        <span>Supabase URL</span>
+        <input id="supabase-url" type="text" placeholder="https://project.supabase.co" autocomplete="off" />
+      </div>
+      <div class="field">
+        <span>Supabase anon/public key</span>
+        <input id="supabase-key" type="password" placeholder="Paste anon key" autocomplete="off" />
+      </div>
+      <p class="note">Scopes needed: streaming, user-modify-playback-state, user-read-playback-state, user-read-private, user-read-email (for profile sync). The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
     </section>
 
     <section class="panel search">
@@ -154,6 +167,7 @@
           <input id="fade-duration" type="number" min="200" max="4000" step="100" value="1200" />
         </label>
         <button id="save-show-btn" class="ghost">Save Show (full)</button>
+        <button id="publish-show-btn" class="primary">Publish to Supabase</button>
         <button id="load-show-btn" class="ghost">Load Show</button>
         <button id="save-tracks-btn" class="ghost">Save Tracks Only</button>
         <input id="load-input" type="file" accept="application/json" style="display:none" />
