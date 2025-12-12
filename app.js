@@ -112,6 +112,7 @@
     dom.connectPanel = document.getElementById("connect-panel");
     dom.themeSwitch = document.getElementById("theme-switch");
     dom.fontSwitch = document.getElementById("font-switch");
+    dom.fontCustom = document.getElementById("font-custom");
     dom.saveShowBtn = document.getElementById("save-show-btn");
     dom.publishShowBtn = document.getElementById("publish-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
@@ -199,6 +200,11 @@
     dom.connectClose.addEventListener("click", toggleConnectPanel);
     dom.themeSwitch && dom.themeSwitch.addEventListener("click", handleThemeSwitch);
     dom.fontSwitch && dom.fontSwitch.addEventListener("click", handleFontSwitch);
+    if (dom.fontCustom) {
+      dom.fontCustom.querySelectorAll('input[type="color"]').forEach((input) => {
+        input.addEventListener("input", handleFontColorInput);
+      });
+    }
     dom.searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
       runSearch();
@@ -343,13 +349,15 @@
     const btn = e.target.closest(".font-dot");
     if (!btn) return;
     const font = btn.dataset.font;
-    applyFont(font);
-    sessionStorage.setItem("rs_font", font);
+    const color = btn.dataset.color || btn.dataset.defaultColor;
+    applyFont(font, color);
+    sessionStorage.setItem("rs_font_choice", color || font);
   }
 
   function applySavedFont() {
-    const font = sessionStorage.getItem("rs_font") || "grotesk";
-    applyFont(font);
+    const storedColors = restoreFontSwatches();
+    const fontColor = sessionStorage.getItem("rs_font_choice") || storedColors.aqua || "#6af5c8";
+    applyFont("custom", fontColor);
   }
 
   function applyTheme(theme) {
@@ -372,20 +380,89 @@
     root.style.setProperty("--grid", t.grid);
   }
 
-  function applyFont(font) {
+  function applyFont(font, overrideColor) {
     const root = document.documentElement;
     const defaultFonts = { body: '"Space Grotesk", "Inter", system-ui, -apple-system, sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' };
     const palettes = {
-      aqua: { text: "#e7fdf7", muted: "#9fd9c8" },
-      amber: { text: "#fff3df", muted: "#f7cfa0" },
-      rose: { text: "#ffe8f1", muted: "#f6b6cf" },
-      iris: { text: "#efe8ff", muted: "#c3bbff" },
+      aqua: { text: "#6af5c8" },
+      amber: { text: "#ffb347" },
+      rose: { text: "#ff8fb1" },
+      iris: { text: "#b388ff" },
     };
-    const p = palettes[font] || palettes.aqua;
-    root.style.setProperty("--text", p.text);
-    root.style.setProperty("--muted", p.muted);
+    const color = overrideColor || palettes[font]?.text || palettes.aqua.text;
+    const muted = lightenColor(color, 0.35);
+    root.style.setProperty("--text", color);
+    root.style.setProperty("--muted", muted);
     root.style.setProperty("--font-body", defaultFonts.body);
     root.style.setProperty("--font-heading", defaultFonts.heading);
+  }
+
+  function handleFontColorInput(e) {
+    const input = e.target;
+    const slot = input.dataset.target;
+    const color = input.value;
+    const btn = dom.fontSwitch?.querySelector(`[data-font="${slot}"]`);
+    if (btn) {
+      btn.dataset.color = color;
+      btn.style.background = buildDotGradient(color);
+    }
+    sessionStorage.setItem(`rs_font_color_${slot}`, color);
+    applyFont("custom", color);
+    sessionStorage.setItem("rs_font_choice", color);
+  }
+
+  function restoreFontSwatches() {
+    const colors = {};
+    const buttons = dom.fontSwitch ? Array.from(dom.fontSwitch.querySelectorAll(".font-dot")) : [];
+    buttons.forEach((btn) => {
+      const slot = btn.dataset.font;
+      const stored = sessionStorage.getItem(`rs_font_color_${slot}`);
+      if (stored) {
+        colors[slot] = stored;
+        btn.dataset.color = stored;
+        btn.style.background = buildDotGradient(stored);
+      } else if (btn.dataset.color) {
+        colors[slot] = btn.dataset.color;
+        btn.style.background = buildDotGradient(btn.dataset.color);
+      }
+    });
+    const inputs = dom.fontCustom ? Array.from(dom.fontCustom.querySelectorAll('input[type="color"]')) : [];
+    inputs.forEach((input) => {
+      const slot = input.dataset.target;
+      if (colors[slot]) {
+        input.value = colors[slot];
+      }
+    });
+    return colors;
+  }
+
+  function buildDotGradient(color) {
+    const shade = shadeColor(color, -0.18);
+    return `linear-gradient(135deg, ${color}, ${shade})`;
+  }
+
+  function lightenColor(hex, amount = 0.3) {
+    const { r, g, b } = hexToRgb(hex);
+    const to = (channel) => Math.round(channel + (255 - channel) * amount);
+    return rgbToHex(to(r), to(g), to(b));
+  }
+
+  function shadeColor(hex, amount = -0.15) {
+    const { r, g, b } = hexToRgb(hex);
+    const to = (channel) => Math.max(0, Math.min(255, Math.round(channel * (1 + amount))));
+    return rgbToHex(to(r), to(g), to(b));
+  }
+
+  function hexToRgb(hex) {
+    const clean = hex.replace("#", "");
+    const m = clean.length === 3
+      ? clean.split("").map((c) => parseInt(c + c, 16))
+      : [clean.slice(0, 2), clean.slice(2, 4), clean.slice(4, 6)].map((c) => parseInt(c, 16));
+    return { r: m[0] || 0, g: m[1] || 0, b: m[2] || 0 };
+  }
+
+  function rgbToHex(r, g, b) {
+    return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
   }
 
   function hydrateSupabaseConfig() {

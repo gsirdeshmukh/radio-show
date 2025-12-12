@@ -238,25 +238,34 @@ p {
   gap: 8px;
 }
 
-.theme-dot {
+.theme-dot,
+.font-dot {
   width: 26px;
   height: 26px;
   border-radius: 50%;
   border: 2px solid var(--grid);
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   padding: 0;
+  position: relative;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.theme-dot::after,
+.font-dot::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: #f2f6ff;
+  border-radius: 2px;
+  position: absolute;
+  inset: 0;
+  margin: auto;
 }
 
 .font-dot {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid var(--grid);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: linear-gradient(135deg, #6af5c8, #2ed8aa);
+  width: 30px;
+  height: 30px;
+  border-style: solid;
 }
 
 .font-dot:focus-visible,
@@ -269,6 +278,37 @@ p {
 .font-dot[data-font="amber"] { background: linear-gradient(135deg, #ffb347, #ff8c42); }
 .font-dot[data-font="rose"] { background: linear-gradient(135deg, #ff8fb1, #ff6ea9); }
 .font-dot[data-font="iris"] { background: linear-gradient(135deg, #b388ff, #7f7bff); }
+
+.font-custom {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.font-custom input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 2px solid var(--grid);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.font-custom input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.font-custom input[type="color"]::-moz-color-swatch {
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+}
 
 .theme-dot[data-theme="ember"] { background: linear-gradient(135deg, #ff6b3d, #fbb13c); }
 .theme-dot[data-theme="sunset"] { background: linear-gradient(135deg, #ff8fb1, #ff6b6b); }
