@@ -515,6 +515,7 @@
           country: profile.country,
           product: profile.product,
         },
+        headers: { Authorization: `Bearer ${state.supabaseKey}` },
       });
     } catch (err) {
       console.warn("supabase profile sync failed", err);
@@ -2145,7 +2146,10 @@
     }
     try {
       const payload = await buildSessionPayload({ tracksOnly: false });
-      const { data, error } = await client.functions.invoke("create_session", { body: { payload } });
+      const { data, error } = await client.functions.invoke("create_session", {
+        body: { payload },
+        headers: { Authorization: `Bearer ${state.supabaseKey}` },
+      });
       if (error) throw error;
       const slug = data?.slug || data?.id || "";
       alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");

@@ -229,6 +229,7 @@
       try {
         const { data, error } = await client.functions.invoke("list_sessions", {
           body: { q: query || null },
+          headers: { Authorization: `Bearer ${state.supabaseKey}` },
         });
         if (error) throw error;
         state.topSessions = Array.isArray(data?.sessions) ? data.sessions : [];
@@ -315,6 +316,7 @@
       if (client && (entry?.id || entry?.slug) && !entry?.url && !entry?.json_url) {
         const { data, error } = await client.functions.invoke("get_session", {
           body: { id: entry.id, slug: entry.slug },
+          headers: { Authorization: `Bearer ${state.supabaseKey}` },
         });
         if (error) throw error;
         const resolved = resolveSessionUrl(data);

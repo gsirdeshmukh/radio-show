@@ -20,4 +20,5 @@ Status (run):
 - Secrets set with PROJECT_URL + SERVICE_ROLE_KEY + buckets + anon create enabled.
 - Buckets created.
 - Fixed RLS issue in create_session by running functions with service role (no caller auth header) and applied schema via migration. Verified create_session works via curl.
+- Added `supabase/functions/_config.yaml` with `verify_jwt: false` to allow public function calls (no JWT required) and redeployed functions.
 5) Optional: create public Storage buckets `sessions` and `assets` in dashboard (public read).
