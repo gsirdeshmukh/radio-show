@@ -19,11 +19,11 @@
 	  const SUPABASE_ANON_KEY = "rs_supabase_anon";
 	  const LIKED_SESSIONS_KEY = "rs_liked_sessions";
 
-  const state = {
-    token: "",
-    clientId: "",
-    redirectUri: "",
-    authState: "",
+	  const state = {
+	    token: "",
+	    clientId: "",
+	    redirectUri: "",
+	    authState: "",
     player: null,
     deviceId: null,
     connected: false,
@@ -64,6 +64,7 @@
 		    sessionsSearchTimer: null,
 		    sessionsStatsChannel: null,
 		    likedSessions: new Set(),
+		    currentSessionId: null,
 		  };
 
   const sdkReady = new Promise((resolve) => {
@@ -110,6 +111,7 @@
     dom.connectToggle = document.getElementById("connect-toggle");
     dom.connectPanel = document.getElementById("connect-panel");
     dom.themeSwitch = document.getElementById("theme-switch");
+    dom.fontSwitch = document.getElementById("font-switch");
     dom.saveShowBtn = document.getElementById("save-show-btn");
     dom.publishShowBtn = document.getElementById("publish-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
@@ -195,7 +197,8 @@
     dom.forgetTokenBtn.addEventListener("click", forgetToken);
     dom.connectToggle.addEventListener("click", toggleConnectPanel);
     dom.connectClose.addEventListener("click", toggleConnectPanel);
-    dom.themeSwitch.addEventListener("click", handleThemeSwitch);
+    dom.themeSwitch && dom.themeSwitch.addEventListener("click", handleThemeSwitch);
+    dom.fontSwitch && dom.fontSwitch.addEventListener("click", handleFontSwitch);
     dom.searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
       runSearch();
@@ -336,13 +339,27 @@
     applyTheme(theme);
   }
 
+  function handleFontSwitch(e) {
+    const btn = e.target.closest(".font-dot");
+    if (!btn) return;
+    const font = btn.dataset.font;
+    applyFont(font);
+    sessionStorage.setItem("rs_font", font);
+  }
+
+  function applySavedFont() {
+    const font = sessionStorage.getItem("rs_font") || "grotesk";
+    applyFont(font);
+  }
+
   function applyTheme(theme) {
     const root = document.documentElement;
     const themes = {
-      default: { accent: "#4cf1c5", accent2: "#f75c87", panel: "#141a27", panelStrong: "#1b2233", bg: "#0e1119" },
+      default: { accent: "#6af5c8", accent2: "#ff6ea9", panel: "#0f1a2b", panelStrong: "#0c1524", bg: "#0b1423" },
       ember: { accent: "#ff6b3d", accent2: "#fbb13c", panel: "#1c1410", panelStrong: "#281a14", bg: "#0d0907" },
       sunset: { accent: "#ff8fb1", accent2: "#ff6b6b", panel: "#1d1520", panelStrong: "#251a29", bg: "#100a11" },
       violet: { accent: "#b388ff", accent2: "#6c63ff", panel: "#141328", panelStrong: "#1c1b35", bg: "#0b0a18" },
+      frost: { accent: "#ffffff", accent2: "#d5e7ff", panel: "#0f1826", panelStrong: "#0b1220", bg: "#0a0f19" },
     };
     const t = themes[theme] || themes.default;
     root.style.setProperty("--accent", t.accent);
@@ -350,6 +367,19 @@
     root.style.setProperty("--panel", t.panel);
     root.style.setProperty("--panel-strong", t.panelStrong);
     root.style.setProperty("--bg", t.bg);
+  }
+
+  function applyFont(font) {
+    const root = document.documentElement;
+    const fonts = {
+      grotesk: { body: '"Space Grotesk", "Inter", system-ui, -apple-system, sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
+      pixel: { body: '"Press Start 2P", "Space Grotesk", sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
+      mono: { body: '"IBM Plex Mono", "Space Grotesk", monospace', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
+      serif: { body: '"Georgia", "Space Grotesk", serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
+    };
+    const f = fonts[font] || fonts.grotesk;
+    root.style.setProperty("--font-body", f.body);
+    root.style.setProperty("--font-heading", f.heading);
   }
 
   function hydrateSupabaseConfig() {
@@ -589,9 +619,52 @@
 		    }
 		  }
 
-		  function isSessionLiked(sessionId) {
-		    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
-		  }
+			  function isSessionLiked(sessionId) {
+			    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
+			  }
+
+			  async function describeFunctionsInvokeError(err) {
+			    if (!err) return "Unknown error";
+			    const base = err?.message || String(err);
+			    const ctx = err?.context || null;
+			    const status = typeof ctx?.status === "number" ? ctx.status : null;
+			    let body = "";
+			    try {
+			      if (ctx && typeof ctx.clone === "function") {
+			        body = await ctx.clone().text();
+			      } else if (ctx && typeof ctx.text === "function") {
+			        body = await ctx.text();
+			      }
+			    } catch {
+			      body = "";
+			    }
+			    body = (body || "").trim();
+			    if (body.length > 600) body = `${body.slice(0, 600)}…`;
+			    const details = err?.details ? String(err.details) : "";
+			    const bits = [];
+			    if (status) bits.push(`HTTP ${status}`);
+			    if (details) bits.push(details);
+			    if (body && body !== base) bits.push(body);
+			    return bits.length ? `${base} (${bits.join(" · ")})` : base;
+			  }
+
+			  async function recordSupabaseEvent(sessionId, type) {
+			    const client = initSupabaseClient();
+			    if (!client || !sessionId || !type) return { ok: false, error: new Error("Supabase not configured") };
+			    try {
+			      const { error } = await client.functions.invoke("record_event", {
+			        headers: getSupabaseAuthHeaders(),
+			        body: { id: sessionId, type },
+			      });
+			      if (error) {
+			        const msg = await describeFunctionsInvokeError(error);
+			        return { ok: false, error: new Error(msg), raw: error };
+			      }
+			      return { ok: true, error: null };
+			    } catch (err) {
+			      return { ok: false, error: err };
+			    }
+			  }
 
 			  async function likeSession(sessionId) {
 			    if (!sessionId || isSessionLiked(sessionId)) return;
@@ -601,15 +674,12 @@
 		      return;
 			    }
 			    try {
-			      const { error } = await client.functions.invoke("record_event", {
-			        headers: getSupabaseAuthHeaders(),
-			        body: { id: sessionId, type: "like" },
-			      });
-			      if (error) throw error;
-		      state.likedSessions.add(sessionId);
-		      persistLikedSessions();
-		      const row = (state.sessions || []).find((s) => s?.id === sessionId);
-		      if (row) {
+			      const res = await recordSupabaseEvent(sessionId, "like");
+			      if (!res.ok) throw res.error || new Error("Like failed");
+			      state.likedSessions.add(sessionId);
+			      persistLikedSessions();
+			      const row = (state.sessions || []).find((s) => s?.id === sessionId);
+			      if (row) {
 		        row.likes = (row.likes ?? 0) + 1;
 		        patchSessionSubtitle(sessionId);
 		      }
@@ -722,19 +792,21 @@
 	    });
 	  }
 
-	  async function loadSupabaseSession(entry) {
-	    try {
-	      const client = initSupabaseClient();
-	      if (!client) throw new Error("Supabase not configured");
-	      setSessionsStatus("Loading session…");
-	      const { data, error } = await client.functions.invoke("get_session", {
-	        body: { id: entry?.id || null, slug: entry?.slug || null },
-	      });
-	      if (error) throw error;
-	      const url = data?.json_url || null;
-	      if (!url || (!url.startsWith("http") && !url.startsWith("data:"))) {
-	        throw new Error("No signed session URL");
-	      }
+		  async function loadSupabaseSession(entry) {
+		    try {
+		      state.currentSessionId = entry?.id || null;
+		      const client = initSupabaseClient();
+		      if (!client) throw new Error("Supabase not configured");
+		      setSessionsStatus("Loading session…");
+		      const { data, error } = await client.functions.invoke("get_session", {
+		        body: { id: entry?.id || null, slug: entry?.slug || null },
+		      });
+		      if (error) throw error;
+		      if (data?.id) state.currentSessionId = data.id;
+		      const url = data?.json_url || null;
+		      if (!url || (!url.startsWith("http") && !url.startsWith("data:"))) {
+		        throw new Error("No signed session URL");
+		      }
 	      if (!isSafeSessionUrl(url)) {
 	        throw new Error("Session URL not allowed");
 	      }
@@ -755,14 +827,15 @@
 	        dom.sessionHost.value = data?.host || entry?.host || "";
 	        dom.sessionGenre.value = data?.genre || entry?.genre || "";
 	      }
-	      renderSegments();
-	      alert(`Loaded session "${dom.sessionTitle.value || entry?.slug || entry?.id}".`);
-	    } catch (err) {
-	      alert(`Could not load session: ${err.message}`);
-	    } finally {
-	      setSessionsStatus(`${(state.sessions || []).length} sessions`);
-	    }
-	  }
+		      renderSegments();
+		      alert(`Loaded session "${dom.sessionTitle.value || entry?.slug || entry?.id}".`);
+		    } catch (err) {
+		      state.currentSessionId = null;
+		      alert(`Could not load session: ${err.message}`);
+		    } finally {
+		      setSessionsStatus(`${(state.sessions || []).length} sessions`);
+		    }
+		  }
 
 	  function setSessionsStatus(text) {
 	    if (dom.sessionsStatus) dom.sessionsStatus.textContent = text;
@@ -790,9 +863,9 @@
 
 		  // Initialize defaults and parse callback params
 		  document.addEventListener("DOMContentLoaded", () => {
-	    assignDom();
-	    bindEvents();
-	    renderProfileChip(null);
+    assignDom();
+    bindEvents();
+    renderProfileChip(null);
 	    setStatus("spotify: disconnected", false);
 	    hydrateLikedSessions();
 	    // Always use the GitHub Pages redirect for PKCE.
@@ -805,6 +878,7 @@
 		    renderSupabaseAuthStatus();
 		    loadSupabaseSessions();
 		    applySavedTheme();
+		    applySavedFont();
 	    handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
@@ -1920,13 +1994,18 @@
     if (state.isPlaying) {
       return;
     }
-    stopPreview();
-    stopShow();
-    await transferPlaybackToDevice();
-    state.isPlaying = true;
-    dom.playShowBtn.textContent = "Playing…";
-    dom.playShowBtn.disabled = true;
-    dom.stopShowBtn.disabled = false;
+	    stopPreview();
+	    stopShow();
+	    await transferPlaybackToDevice();
+	    state.isPlaying = true;
+	    if (state.currentSessionId) {
+	      recordSupabaseEvent(state.currentSessionId, "play").then((res) => {
+	        if (!res.ok) console.warn("Supabase play record failed", res.error);
+	      });
+	    }
+	    dom.playShowBtn.textContent = "Playing…";
+	    dom.playShowBtn.disabled = true;
+	    dom.stopShowBtn.disabled = false;
     const ctx = getAudioContext();
     await ctx.resume();
     const start = Math.max(0, startIndex || 0);
@@ -2591,23 +2670,25 @@
 		        body: { payload },
 		      });
 		      if (error) throw error;
-	      const slug = data?.slug || data?.id || "";
-	      loadSupabaseSessions();
-	      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
-	    } catch (err) {
+		      if (data?.id) state.currentSessionId = data.id;
+		      const slug = data?.slug || data?.id || "";
+		      loadSupabaseSessions();
+		      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
+		    } catch (err) {
       console.error("Supabase publish failed", err);
       alert("Supabase publish failed; check console for details.");
     }
   }
 
-  async function handleImport(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const payload = JSON.parse(text);
-      if (!payload || !Array.isArray(payload.segments)) {
-        alert("Invalid show file.");
+	  async function handleImport(e) {
+	    const file = e.target.files?.[0];
+	    if (!file) return;
+	    try {
+	      state.currentSessionId = null;
+	      const text = await file.text();
+	      const payload = JSON.parse(text);
+	      if (!payload || !Array.isArray(payload.segments)) {
+	        alert("Invalid show file.");
         return;
       }
       state.segments = (await hydrateSegments(payload.segments)).filter(Boolean);
