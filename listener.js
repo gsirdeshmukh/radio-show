@@ -80,11 +80,15 @@
 
 		  function getSupabaseClient() {
 	    if (typeof window === "undefined" || !window.supabase) return null;
-	    const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
-	    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
-    if (!localStorage.getItem(SUPABASE_URL_KEY) && url) localStorage.setItem(SUPABASE_URL_KEY, url);
-    if (!localStorage.getItem(SUPABASE_ANON_KEY) && anon) localStorage.setItem(SUPABASE_ANON_KEY, anon);
-    if (!url || !anon) return null;
+	    const rawUrl = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+	    const rawAnon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
+	    const url = String(rawUrl).trim().replace(/\s+/g, "");
+	    const anon = String(rawAnon).trim().replace(/\s+/g, "");
+	    if (!localStorage.getItem(SUPABASE_URL_KEY) && url) localStorage.setItem(SUPABASE_URL_KEY, url);
+	    if (!localStorage.getItem(SUPABASE_ANON_KEY) && anon) localStorage.setItem(SUPABASE_ANON_KEY, anon);
+	    if (localStorage.getItem(SUPABASE_URL_KEY) !== url) localStorage.setItem(SUPABASE_URL_KEY, url);
+	    if (localStorage.getItem(SUPABASE_ANON_KEY) !== anon) localStorage.setItem(SUPABASE_ANON_KEY, anon);
+	    if (!url || !anon) return null;
     if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
       return state.supabase;
     }
@@ -203,18 +207,19 @@
 		    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
 		  }
 
-		  async function likeSession(sessionId) {
-		    if (!sessionId || isSessionLiked(sessionId)) return;
-		    const client = getSupabaseClient();
-		    if (!client) {
+			  async function likeSession(sessionId) {
+			    if (!sessionId || isSessionLiked(sessionId)) return;
+			    const client = getSupabaseClient();
+			    if (!client) {
 		      alert("Supabase not configured");
-		      return;
-		    }
-		    try {
-		      const { error } = await client.functions.invoke("record_event", {
-		        body: { id: sessionId, type: "like" },
-		      });
-		      if (error) throw error;
+			      return;
+			    }
+			    try {
+			      const { error } = await client.functions.invoke("record_event", {
+			        headers: getSupabaseAuthHeaders(),
+			        body: { id: sessionId, type: "like" },
+			      });
+			      if (error) throw error;
 		      state.likedSessions.add(sessionId);
 		      persistLikedSessions();
 		      const row = (state.topSessions || []).find((s) => s?.id === sessionId);
@@ -228,22 +233,27 @@
 		        btn.setAttribute("aria-pressed", "true");
 		        btn.title = "Liked";
 		        btn.disabled = true;
-		      }
-		    } catch (err) {
-		      console.warn("Supabase like failed", err);
-		      alert("Could not like right now.");
-		    }
-		  }
+			      }
+			    } catch (err) {
+			      console.warn("Supabase like failed", err);
+			      alert(`Could not like right now: ${err?.message || "unknown error"}`);
+			    }
+			  }
+
+			  function getSupabaseAuthHeaders() {
+			    const token = state.supabaseSession?.access_token || "";
+			    return token ? { Authorization: `Bearer ${token}` } : {};
+			  }
 
  		  async function recordSupabaseEvent(id, type) {
  		    const client = getSupabaseClient();
  		    if (!client || !id) return;
-	    try {
-	      await client.functions.invoke("record_event", { body: { id, type } });
-	    } catch (err) {
-	      console.warn("Supabase record_event failed", err);
-	    }
-	  }
+		    try {
+		      await client.functions.invoke("record_event", { headers: getSupabaseAuthHeaders(), body: { id, type } });
+		    } catch (err) {
+		      console.warn("Supabase record_event failed", err);
+		    }
+		  }
 
 	  function bindEvents() {
     dom.connectBtn.addEventListener("click", connectSpotify);
