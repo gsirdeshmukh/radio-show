@@ -355,11 +355,11 @@
   function applyTheme(theme) {
     const root = document.documentElement;
     const themes = {
-      default: { accent: "#6af5c8", accent2: "#ff6ea9", panel: "#0f1a2b", panelStrong: "#0c1524", bg: "#0b1423" },
-      ember: { accent: "#ff6b3d", accent2: "#fbb13c", panel: "#1c1410", panelStrong: "#281a14", bg: "#0d0907" },
-      sunset: { accent: "#ff8fb1", accent2: "#ff6b6b", panel: "#1d1520", panelStrong: "#251a29", bg: "#100a11" },
-      violet: { accent: "#b388ff", accent2: "#6c63ff", panel: "#141328", panelStrong: "#1c1b35", bg: "#0b0a18" },
-      frost: { accent: "#ffffff", accent2: "#d5e7ff", panel: "#0f1826", panelStrong: "#0b1220", bg: "#0a0f19" },
+      default: { accent: "#6af5c8", accent2: "#ff6ea9", panel: "#0f1a2b", panelStrong: "#0c1524", bg: "#0b1423", text: "#e7f3ff", muted: "#8aa1c0", grid: "rgba(255,255,255,0.08)" },
+      ember: { accent: "#ff6b3d", accent2: "#fbb13c", panel: "#1c1410", panelStrong: "#281a14", bg: "#0d0907", text: "#ffe8d9", muted: "#ffb48f", grid: "rgba(255,255,255,0.08)" },
+      sunset: { accent: "#ff8fb1", accent2: "#ff6b6b", panel: "#1d1520", panelStrong: "#251a29", bg: "#100a11", text: "#ffe8f0", muted: "#f4a4c6", grid: "rgba(255,255,255,0.08)" },
+      violet: { accent: "#b388ff", accent2: "#6c63ff", panel: "#141328", panelStrong: "#1c1b35", bg: "#0b0a18", text: "#ebe6ff", muted: "#c1b8ff", grid: "rgba(255,255,255,0.08)" },
+      frost: { accent: "#ffffff", accent2: "#d5e7ff", panel: "#f5f6f8", panelStrong: "#eef2f5", bg: "#ffffff", text: "#0c1524", muted: "#586b85", grid: "rgba(12,21,36,0.12)" },
     };
     const t = themes[theme] || themes.default;
     root.style.setProperty("--accent", t.accent);
@@ -367,19 +367,25 @@
     root.style.setProperty("--panel", t.panel);
     root.style.setProperty("--panel-strong", t.panelStrong);
     root.style.setProperty("--bg", t.bg);
+    root.style.setProperty("--text", t.text);
+    root.style.setProperty("--muted", t.muted);
+    root.style.setProperty("--grid", t.grid);
   }
 
   function applyFont(font) {
     const root = document.documentElement;
-    const fonts = {
-      grotesk: { body: '"Space Grotesk", "Inter", system-ui, -apple-system, sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
-      pixel: { body: '"Press Start 2P", "Space Grotesk", sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
-      mono: { body: '"IBM Plex Mono", "Space Grotesk", monospace', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
-      serif: { body: '"Georgia", "Space Grotesk", serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' },
+    const defaultFonts = { body: '"Space Grotesk", "Inter", system-ui, -apple-system, sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' };
+    const palettes = {
+      aqua: { text: "#e7fdf7", muted: "#9fd9c8" },
+      amber: { text: "#fff3df", muted: "#f7cfa0" },
+      rose: { text: "#ffe8f1", muted: "#f6b6cf" },
+      iris: { text: "#efe8ff", muted: "#c3bbff" },
     };
-    const f = fonts[font] || fonts.grotesk;
-    root.style.setProperty("--font-body", f.body);
-    root.style.setProperty("--font-heading", f.heading);
+    const p = palettes[font] || palettes.aqua;
+    root.style.setProperty("--text", p.text);
+    root.style.setProperty("--muted", p.muted);
+    root.style.setProperty("--font-body", defaultFonts.body);
+    root.style.setProperty("--font-heading", defaultFonts.heading);
   }
 
   function hydrateSupabaseConfig() {
