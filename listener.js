@@ -22,11 +22,12 @@
     segmentStopTimer: null,
     segmentStopHandler: null,
     currentSegment: null,
-    progressRaf: null,
-    supabase: null,
-    supabaseUrl: "",
-    supabaseKey: "",
-  };
+	    progressRaf: null,
+	    supabase: null,
+	    supabaseUrl: "",
+	    supabaseKey: "",
+	    currentSessionId: null,
+	  };
 
   const sdkReady = new Promise((resolve) => {
     if (window.Spotify) return resolve();
@@ -71,7 +72,7 @@
     dom.barProgressFill = document.getElementById("bar-progress-fill");
   }
 
-  function getSupabaseClient() {
+	  function getSupabaseClient() {
     if (typeof window === "undefined" || !window.supabase) return null;
     const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
     const anon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
@@ -91,9 +92,19 @@
       state.supabase = null;
       return null;
     }
-  }
+	  }
 
-  function bindEvents() {
+	  async function recordSupabaseEvent(id, type) {
+	    const client = getSupabaseClient();
+	    if (!client || !id) return;
+	    try {
+	      await client.functions.invoke("record_event", { body: { id, type } });
+	    } catch (err) {
+	      console.warn("Supabase record_event failed", err);
+	    }
+	  }
+
+	  function bindEvents() {
     dom.connectBtn.addEventListener("click", connectSpotify);
     dom.fileInput.addEventListener("change", handleFile);
     dom.playBtn.addEventListener("click", playShow);
@@ -159,17 +170,18 @@
     }
   }
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    try {
-      const data = JSON.parse(text);
-      await ingestShowData(data);
-    } catch (err) {
-      alert("Could not parse file.");
-    }
-  }
+	  async function handleFile(e) {
+	    const file = e.target.files?.[0];
+	    if (!file) return;
+	    const text = await file.text();
+	    try {
+	      state.currentSessionId = null;
+	      const data = JSON.parse(text);
+	      await ingestShowData(data);
+	    } catch (err) {
+	      alert("Could not parse file.");
+	    }
+	  }
 
   function renderMeta() {
     dom.sessionTitle.textContent = state.showMeta.title || "Untitled show";
@@ -309,18 +321,20 @@
     });
   }
 
-  async function loadSessionEntry(entry) {
-    try {
-      const client = getSupabaseClient();
-      if (client && (entry?.id || entry?.slug) && !entry?.url && !entry?.json_url) {
-        const { data, error } = await client.functions.invoke("get_session", {
-          body: { id: entry.id, slug: entry.slug },
-        });
-        if (error) throw error;
-        const resolved = resolveSessionUrl(data);
-        if (resolved) {
-          await loadSessionFromUrl(resolved);
-          return;
+	  async function loadSessionEntry(entry) {
+	    try {
+	      state.currentSessionId = entry?.id || null;
+	      const client = getSupabaseClient();
+	      if (client && (entry?.id || entry?.slug) && !entry?.url && !entry?.json_url) {
+	        const { data, error } = await client.functions.invoke("get_session", {
+	          body: { id: entry.id, slug: entry.slug },
+	        });
+	        if (error) throw error;
+	        if (data?.id) state.currentSessionId = data.id;
+	        const resolved = resolveSessionUrl(data);
+	        if (resolved) {
+	          await loadSessionFromUrl(resolved);
+	          return;
         }
       }
       const resolved = resolveSessionUrl(entry);
@@ -388,18 +402,21 @@
     });
   }
 
-  async function playShow() {
-    if (!state.segments.length) {
-      alert("Load a show JSON first.");
-      return;
-    }
-    if (!state.token && state.segments.some((s) => s.type === "spotify")) {
-      alert("Connect Spotify first.");
-      return;
-    }
-    state.isPlaying = true;
-    for (let i = state.currentIndex; i < state.segments.length; i++) {
-      state.currentIndex = i;
+	  async function playShow() {
+	    if (!state.segments.length) {
+	      alert("Load a show JSON first.");
+	      return;
+	    }
+	    if (!state.token && state.segments.some((s) => s.type === "spotify")) {
+	      alert("Connect Spotify first.");
+	      return;
+	    }
+	    if (state.currentSessionId) {
+	      recordSupabaseEvent(state.currentSessionId, "play").catch(() => {});
+	    }
+	    state.isPlaying = true;
+	    for (let i = state.currentIndex; i < state.segments.length; i++) {
+	      state.currentIndex = i;
       const seg = state.segments[i];
       await playSegment(seg);
       if (!state.isPlaying) break;

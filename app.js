@@ -50,11 +50,16 @@
     overlayOriginalVolume: null,
     overlayMonitor: null,
     overlayRecording: false,
-    supabase: null,
-    supabaseUrl: "",
-    supabaseKey: "",
-    spotifyProfile: null,
-  };
+	    supabase: null,
+	    supabaseUrl: "",
+	    supabaseKey: "",
+	    spotifyProfile: null,
+	    sessions: [],
+	    sessionsQuery: "",
+	    sessionsSort: "new",
+	    sessionsLoading: false,
+	    sessionsSearchTimer: null,
+	  };
 
   const sdkReady = new Promise((resolve) => {
     if (window.Spotify) {
@@ -122,10 +127,16 @@
     dom.listenTotal = document.getElementById("listen-total");
     dom.multiSeed = document.getElementById("multi-seed");
     dom.supabaseUrlInput = document.getElementById("supabase-url");
-    dom.supabaseKeyInput = document.getElementById("supabase-key");
-    dom.profileAvatar = document.getElementById("profile-avatar");
-    dom.profileName = document.getElementById("profile-name");
-  }
+	    dom.supabaseKeyInput = document.getElementById("supabase-key");
+	    dom.profileAvatar = document.getElementById("profile-avatar");
+	    dom.profileName = document.getElementById("profile-name");
+	    dom.sessionsPanel = document.getElementById("sessions-panel");
+	    dom.sessionsList = document.getElementById("sessions-list");
+	    dom.sessionsSearch = document.getElementById("sessions-search");
+	    dom.sessionsSort = document.getElementById("sessions-sort");
+	    dom.sessionsRefresh = document.getElementById("sessions-refresh");
+	    dom.sessionsStatus = document.getElementById("sessions-status");
+	  }
 
   function showInlineRecommendations(seedSegment, recs) {
     const dropdowns = document.querySelectorAll(".dropdown-menu");
@@ -212,22 +223,46 @@
     [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate].forEach((el) => {
       el.addEventListener("input", persistLocal);
     });
-    dom.masterVolume.addEventListener("input", (e) => {
-      state.masterVolume = Number(e.target.value) / 100;
-      if (state.player) {
-        state.player.setVolume(state.masterVolume).catch(() => {});
-      }
-    });
-    dom.fadeDuration.addEventListener("input", (e) => {
-      state.fadeMs = Number(e.target.value);
-    });
-    if (dom.supabaseUrlInput) {
-      dom.supabaseUrlInput.addEventListener("change", initSupabaseClient);
-    }
-    if (dom.supabaseKeyInput) {
-      dom.supabaseKeyInput.addEventListener("change", initSupabaseClient);
-    }
-    document.addEventListener("keydown", handleHotkeys);
+	    dom.masterVolume.addEventListener("input", (e) => {
+	      state.masterVolume = Number(e.target.value) / 100;
+	      if (state.player) {
+	        state.player.setVolume(state.masterVolume).catch(() => {});
+	      }
+	    });
+	    if (dom) {
+	    dom.fadeDuration.addEventListener("input", (e) => {
+	      state.fadeMs = Number(e.target.value);
+	    });
+	    if (dom.supabaseUrlInput) {
+	      dom.supabaseUrlInput.addEventListener("change", () => {
+	        initSupabaseClient();
+	        loadSupabaseSessions();
+	      });
+	    }
+	    if (dom.supabaseKeyInput) {
+	      dom.supabaseKeyInput.addEventListener("change", () => {
+	        initSupabaseClient();
+	        loadSupabaseSessions();
+	      });
+	    }
+	    if (dom.sessionsSearch) {
+	      dom.sessionsSearch.addEventListener("input", () => {
+	        clearTimeout(state.sessionsSearchTimer);
+	        state.sessionsSearchTimer = setTimeout(() => {
+	          state.sessionsQuery = (dom.sessionsSearch.value || "").trim();
+	          loadSupabaseSessions();
+	        }, 250);
+	      });
+	    }
+	    if (dom.sessionsSort) {
+	      dom.sessionsSort.addEventListener("change", () => {
+	        state.sessionsSort = dom.sessionsSort.value || "new";
+	        loadSupabaseSessions();
+	      });
+	    }
+	    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
+	    }
+	    document.addEventListener("keydown", handleHotkeys);
     dom.status &&
       (dom.status.title =
         "Uses scopes: streaming, user-modify-playback-state, user-read-playback-state, user-library-read, playlist-read-private, playlist-read-collaborative, user-read-private, user-read-email");
@@ -317,11 +352,11 @@
     initSupabaseClient();
   }
 
-  function initSupabaseClient() {
-    if (typeof window === "undefined" || !window.supabase) {
-      state.supabase = null;
-      return null;
-    }
+	  function initSupabaseClient() {
+	    if (typeof window === "undefined" || !window.supabase) {
+	      state.supabase = null;
+	      return null;
+	    }
     const url =
       (dom.supabaseUrlInput?.value || "").trim() || localStorage.getItem(SUPABASE_URL_KEY) || "";
     const anon =
@@ -348,11 +383,159 @@
       console.warn("Supabase init failed", err);
       state.supabase = null;
       return null;
-    }
-  }
+	    }
+	  }
 
-  // Initialize defaults and parse callback params
-  document.addEventListener("DOMContentLoaded", () => {
+	  async function loadSupabaseSessions() {
+	    if (!dom.sessionsList) return;
+	    const client = initSupabaseClient();
+	    if (!client) {
+	      state.sessions = [];
+	      renderSupabaseSessions();
+	      setSessionsStatus("Supabase not configured");
+	      return;
+	    }
+	    state.sessionsLoading = true;
+	    setSessionsStatus("Loading…");
+	    try {
+	      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
+	      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
+	      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
+	      const { data, error } = await client.functions.invoke("list_sessions", {
+	        body: { q, sort: functionSort, limit: 50 },
+	      });
+	      if (error) throw error;
+	      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+	      state.sessions =
+	        sortKey === "likes"
+	          ? sessions.slice().sort((a, b) => (b.likes || 0) - (a.likes || 0))
+	          : sessions;
+	      renderSupabaseSessions();
+	      setSessionsStatus(`${state.sessions.length} sessions`);
+	    } catch (err) {
+	      console.warn("Supabase sessions fetch failed", err);
+	      state.sessions = [];
+	      renderSupabaseSessions();
+	      setSessionsStatus("Failed to load");
+	    } finally {
+	      state.sessionsLoading = false;
+	    }
+	  }
+
+	  function renderSupabaseSessions() {
+	    if (!dom.sessionsList) return;
+	    dom.sessionsList.innerHTML = "";
+	    const sessions = state.sessions || [];
+	    if (!sessions.length) {
+	      const li = document.createElement("li");
+	      const meta = document.createElement("div");
+	      meta.className = "meta";
+	      const title = document.createElement("div");
+	      title.className = "title";
+	      title.textContent = "No sessions yet.";
+	      const sub = document.createElement("div");
+	      sub.className = "subtitle";
+	      sub.textContent = "Publish a show to Supabase to see it here.";
+	      meta.appendChild(title);
+	      meta.appendChild(sub);
+	      li.appendChild(meta);
+	      dom.sessionsList.appendChild(li);
+	      return;
+	    }
+	    sessions.forEach((row) => {
+	      const li = document.createElement("li");
+	      const meta = document.createElement("div");
+	      meta.className = "meta";
+	      const title = document.createElement("div");
+	      title.className = "title";
+	      title.textContent = row.title || row.slug || row.id || "Untitled";
+	      const sub = document.createElement("div");
+	      sub.className = "subtitle";
+	      const stats = `${row.plays ?? 0} plays · ${row.downloads ?? 0} downloads · ${row.likes ?? 0} likes`;
+	      const bits = [row.host || "Unknown", row.genre || null, stats].filter(Boolean);
+	      sub.textContent = bits.join(" · ");
+	      meta.appendChild(title);
+	      meta.appendChild(sub);
+	      const actions = document.createElement("div");
+	      actions.className = "actions";
+	      const loadBtn = document.createElement("button");
+	      loadBtn.textContent = "Load";
+	      loadBtn.addEventListener("click", () => loadSupabaseSession(row));
+	      actions.appendChild(loadBtn);
+	      li.appendChild(meta);
+	      li.appendChild(actions);
+	      dom.sessionsList.appendChild(li);
+	    });
+	  }
+
+	  async function loadSupabaseSession(entry) {
+	    try {
+	      const client = initSupabaseClient();
+	      if (!client) throw new Error("Supabase not configured");
+	      setSessionsStatus("Loading session…");
+	      const { data, error } = await client.functions.invoke("get_session", {
+	        body: { id: entry?.id || null, slug: entry?.slug || null },
+	      });
+	      if (error) throw error;
+	      const url = data?.json_url || null;
+	      if (!url || (!url.startsWith("http") && !url.startsWith("data:"))) {
+	        throw new Error("No signed session URL");
+	      }
+	      if (!isSafeSessionUrl(url)) {
+	        throw new Error("Session URL not allowed");
+	      }
+	      const res = await fetch(url, { cache: "no-store" });
+	      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	      const payload = await res.json();
+	      if (!payload || !Array.isArray(payload.segments)) {
+	        throw new Error("Invalid session payload");
+	      }
+	      state.segments = (await hydrateSegments(payload.segments)).filter(Boolean);
+	      if (payload.meta) {
+	        dom.sessionTitle.value = payload.meta.title || "";
+	        dom.sessionHost.value = payload.meta.host || "";
+	        dom.sessionGenre.value = payload.meta.genre || "";
+	        if (payload.meta.date) dom.sessionDate.value = payload.meta.date;
+	      } else {
+	        dom.sessionTitle.value = data?.title || entry?.title || "";
+	        dom.sessionHost.value = data?.host || entry?.host || "";
+	        dom.sessionGenre.value = data?.genre || entry?.genre || "";
+	      }
+	      renderSegments();
+	      alert(`Loaded session "${dom.sessionTitle.value || entry?.slug || entry?.id}".`);
+	    } catch (err) {
+	      alert(`Could not load session: ${err.message}`);
+	    } finally {
+	      setSessionsStatus(`${(state.sessions || []).length} sessions`);
+	    }
+	  }
+
+	  function setSessionsStatus(text) {
+	    if (dom.sessionsStatus) dom.sessionsStatus.textContent = text;
+	  }
+
+	  function isSafeSessionUrl(url) {
+	    if (!url) return false;
+	    if (url.startsWith("data:")) return true;
+	    try {
+	      const parsed = new URL(url, window.location.origin);
+	      const allowed = new Set([window.location.origin]);
+	      const supabaseUrl = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+	      if (supabaseUrl) {
+	        try {
+	          allowed.add(new URL(supabaseUrl).origin);
+	        } catch {
+	          // ignore parse errors
+	        }
+	      }
+	      return allowed.has(parsed.origin);
+	    } catch {
+	      return false;
+	    }
+	  }
+
+	  // Initialize defaults and parse callback params
+	  document.addEventListener("DOMContentLoaded", () => {
     assignDom();
     bindEvents();
     renderProfileChip(null);
@@ -360,11 +543,12 @@
     // Always use the GitHub Pages redirect for PKCE.
     state.redirectUri = DEFAULT_REDIRECT;
     dom.redirectInput.value = state.redirectUri;
-    const storedClientId = sessionStorage.getItem("rs_client_id");
-    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
-    state.clientId = dom.clientIdInput.value;
-    hydrateSupabaseConfig();
-    applySavedTheme();
+	    const storedClientId = sessionStorage.getItem("rs_client_id");
+	    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
+	    state.clientId = dom.clientIdInput.value;
+	    hydrateSupabaseConfig();
+	    loadSupabaseSessions();
+	    applySavedTheme();
     handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
@@ -2145,13 +2329,14 @@
     }
     try {
       const payload = await buildSessionPayload({ tracksOnly: false });
-      const { data, error } = await client.functions.invoke("create_session", {
-        body: { payload },
-      });
-      if (error) throw error;
-      const slug = data?.slug || data?.id || "";
-      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
-    } catch (err) {
+	      const { data, error } = await client.functions.invoke("create_session", {
+	        body: { payload },
+	      });
+	      if (error) throw error;
+	      const slug = data?.slug || data?.id || "";
+	      loadSupabaseSessions();
+	      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
+	    } catch (err) {
       console.error("Supabase publish failed", err);
       alert("Supabase publish failed; check console for details.");
     }

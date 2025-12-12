@@ -124,11 +124,11 @@
       </div>
     </section>
 
-    <section class="panel show">
-      <div class="panel-head">
-        <h2>Show Builder</h2>
-        <span class="hint" id="show-length">0:00</span>
-      </div>
+	    <section class="panel show">
+	      <div class="panel-head">
+	        <h2>Show Builder</h2>
+	        <span class="hint" id="show-length">0:00</span>
+	      </div>
       <div class="row wrap">
         <label class="field">
           <span>Session title</span>
@@ -164,13 +164,31 @@
         <button id="save-tracks-btn" class="ghost">Save Tracks Only</button>
         <input id="load-input" type="file" accept="application/json" style="display:none" />
       </div>
-      <ul id="segments" class="list segments"></ul>
-    </section>
+	      <ul id="segments" class="list segments"></ul>
+	    </section>
 
-    <section class="panel listen">
-      <div class="panel-head">
-        <h2>Listen Mode</h2>
-        <span class="hint">play current or load a show file</span>
+	    <section class="panel sessions" id="sessions-panel">
+	      <div class="panel-head">
+	        <h2>Sessions</h2>
+	        <span class="hint" id="sessions-status">—</span>
+	      </div>
+	      <div class="row wrap">
+	        <input id="sessions-search" type="text" placeholder="Search sessions" />
+	        <select id="sessions-sort">
+	          <option value="new">Newest</option>
+	          <option value="plays">Most plays</option>
+	          <option value="downloads">Most downloads</option>
+	          <option value="likes">Most likes</option>
+	        </select>
+	        <button id="sessions-refresh" class="ghost small">Refresh</button>
+	      </div>
+	      <ul id="sessions-list" class="list"></ul>
+	    </section>
+
+	    <section class="panel listen">
+	      <div class="panel-head">
+	        <h2>Listen Mode</h2>
+	        <span class="hint">play current or load a show file</span>
       </div>
       <div class="row wrap">
         <input id="listen-file" type="file" accept="application/json" />

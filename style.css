@@ -539,6 +539,32 @@ button:hover:not(:disabled) {
 .panel.show {
   grid-column: span 2;
 }
+.panel.sessions {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  order: 3;
+}
+.panel.sessions .list {
+  overflow-y: auto;
+  flex: 1;
+}
+.panel.sessions select {
+  background: var(--panel-strong);
+  border: 1px solid var(--grid);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  min-width: 140px;
+}
+.panel.sessions .actions button {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.panel.sessions .stats {
+  color: var(--muted);
+  font-size: 12px;
+}
 @media (max-width: 900px) {
   .panel.show {
     grid-column: span 1;
