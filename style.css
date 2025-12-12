@@ -318,6 +318,21 @@ p {
   font-size: 12px;
 }
 
+.divider {
+  height: 1px;
+  background: var(--grid);
+  opacity: 0.7;
+  margin: 12px 0;
+}
+
+.subhead {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 8px 0;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -426,6 +441,33 @@ button:disabled {
 button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+}
+
+.like-btn {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  color: var(--muted);
+}
+
+.like-btn.liked {
+  color: #ff4d6d;
+  border-color: rgba(255, 77, 109, 0.55);
+  background: rgba(255, 77, 109, 0.1);
+}
+
+.like-btn:disabled {
+  opacity: 0.9;
+  cursor: default;
 }
 
 .list {
@@ -557,7 +599,7 @@ button:hover:not(:disabled) {
   font-size: 14px;
   min-width: 140px;
 }
-.panel.sessions .actions button {
+.panel.sessions .actions button:not(.like-btn) {
   padding: 6px 8px;
   font-size: 11px;
 }

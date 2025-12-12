@@ -4,6 +4,7 @@
   const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
   const DEFAULT_SUPABASE_ANON =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
+  const LIKED_SESSIONS_KEY = "rs_liked_sessions";
 
   const state = {
     token: "",
@@ -26,7 +27,11 @@
 	    supabase: null,
 	    supabaseUrl: "",
 	    supabaseKey: "",
+	    supabaseAuthSub: null,
+	    supabaseSession: null,
+	    statsChannel: null,
 	    currentSessionId: null,
+	    likedSessions: new Set(),
 	  };
 
   const sdkReady = new Promise((resolve) => {
@@ -41,6 +46,7 @@
     bindEvents();
     const storedToken = sessionStorage.getItem("rs_token");
     if (storedToken) dom.tokenInput.value = storedToken;
+    hydrateLikedSessions();
     loadTopSessions();
   });
 
@@ -72,31 +78,166 @@
     dom.barProgressFill = document.getElementById("bar-progress-fill");
   }
 
-	  function getSupabaseClient() {
-    if (typeof window === "undefined" || !window.supabase) return null;
-    const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
-    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
+		  function getSupabaseClient() {
+	    if (typeof window === "undefined" || !window.supabase) return null;
+	    const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+	    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
     if (!localStorage.getItem(SUPABASE_URL_KEY) && url) localStorage.setItem(SUPABASE_URL_KEY, url);
     if (!localStorage.getItem(SUPABASE_ANON_KEY) && anon) localStorage.setItem(SUPABASE_ANON_KEY, anon);
     if (!url || !anon) return null;
     if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
       return state.supabase;
     }
-    try {
-      state.supabase = window.supabase.createClient(url, anon);
-      state.supabaseUrl = url;
-      state.supabaseKey = anon;
-      return state.supabase;
-    } catch (err) {
-      console.warn("Supabase init failed", err);
-      state.supabase = null;
-      return null;
-    }
-	  }
+	    try {
+	      state.supabase = window.supabase.createClient(url, anon);
+	      state.supabaseUrl = url;
+	      state.supabaseKey = anon;
+	      ensureSupabaseAuth();
+	      ensureSessionStatsSubscription();
+	      return state.supabase;
+	    } catch (err) {
+	      console.warn("Supabase init failed", err);
+	      state.supabase = null;
+	      return null;
+	    }
+		  }
 
-	  async function recordSupabaseEvent(id, type) {
-	    const client = getSupabaseClient();
-	    if (!client || !id) return;
+		  function ensureSupabaseAuth() {
+		    const client = state.supabase;
+		    if (!client || state.supabaseAuthSub) return;
+		    try {
+		      const { data } = client.auth.onAuthStateChange((_event, session) => {
+		        state.supabaseSession = session || null;
+		      });
+		      state.supabaseAuthSub = data?.subscription || null;
+		      client.auth
+		        .getSession()
+		        .then(({ data }) => {
+		          state.supabaseSession = data?.session || null;
+		        })
+		        .catch(() => {});
+		    } catch (err) {
+		      console.warn("Supabase auth init failed", err);
+		    }
+		  }
+
+		  function ensureSessionStatsSubscription() {
+		    const client = state.supabase;
+		    if (!client || state.statsChannel) return;
+		    try {
+		      state.statsChannel = client
+		        .channel("rs-session-stats")
+		        .on(
+		          "postgres_changes",
+		          { event: "*", schema: "public", table: "session_stats" },
+		          (payload) => {
+		            const next = payload?.new || null;
+		            if (!next?.session_id) return;
+		            applySessionStats(next.session_id, next);
+		          }
+		        )
+		        .subscribe();
+		    } catch (err) {
+		      console.warn("Supabase realtime subscribe failed", err);
+		      state.statsChannel = null;
+		    }
+		  }
+
+		  function applySessionStats(sessionId, stats) {
+		    if (!sessionId || !stats) return;
+		    const rows = state.topSessions || [];
+		    const idx = rows.findIndex((s) => s?.id === sessionId);
+		    if (idx === -1) return;
+		    const row = rows[idx];
+		    row.plays = stats.plays ?? row.plays ?? 0;
+		    row.downloads = stats.downloads ?? row.downloads ?? 0;
+		    row.likes = stats.likes ?? row.likes ?? 0;
+		    patchTopSessionSubtitle(sessionId);
+		  }
+
+		  function formatTopSessionStats(row) {
+		    const plays = row?.plays ?? 0;
+		    const downloads = row?.downloads ?? 0;
+		    const likes = row?.likes ?? 0;
+		    return `${plays} plays · ${downloads} downloads · ${likes} likes`;
+		  }
+
+		  function formatTopSessionSubtitle(row) {
+		    const bits = [row?.host || "Unknown"];
+		    if (row?.genre) bits.push(row.genre);
+		    if (Array.isArray(row?.tags) && row.tags.length) bits.push(row.tags.slice(0, 2).join(", "));
+		    bits.push(formatTopSessionStats(row));
+		    return bits.filter(Boolean).join(" · ");
+		  }
+
+		  function patchTopSessionSubtitle(sessionId) {
+		    if (!dom.topSessions || !sessionId) return;
+		    const target = dom.topSessions.querySelector(`.subtitle[data-session-id="${sessionId}"]`);
+		    if (!target) return;
+		    const row = (state.topSessions || []).find((s) => s?.id === sessionId);
+		    if (!row) return;
+		    target.textContent = formatTopSessionSubtitle(row);
+		  }
+
+		  function hydrateLikedSessions() {
+		    try {
+		      const raw = localStorage.getItem(LIKED_SESSIONS_KEY);
+		      if (!raw) return;
+		      const ids = JSON.parse(raw);
+		      if (!Array.isArray(ids)) return;
+		      state.likedSessions = new Set(ids.filter((x) => typeof x === "string" && x));
+		    } catch {
+		      state.likedSessions = new Set();
+		    }
+		  }
+
+		  function persistLikedSessions() {
+		    try {
+		      localStorage.setItem(LIKED_SESSIONS_KEY, JSON.stringify(Array.from(state.likedSessions || [])));
+		    } catch {
+		      // ignore
+		    }
+		  }
+
+		  function isSessionLiked(sessionId) {
+		    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
+		  }
+
+		  async function likeSession(sessionId) {
+		    if (!sessionId || isSessionLiked(sessionId)) return;
+		    const client = getSupabaseClient();
+		    if (!client) {
+		      alert("Supabase not configured");
+		      return;
+		    }
+		    try {
+		      const { error } = await client.functions.invoke("record_event", {
+		        body: { id: sessionId, type: "like" },
+		      });
+		      if (error) throw error;
+		      state.likedSessions.add(sessionId);
+		      persistLikedSessions();
+		      const row = (state.topSessions || []).find((s) => s?.id === sessionId);
+		      if (row) {
+		        row.likes = (row.likes ?? 0) + 1;
+		        patchTopSessionSubtitle(sessionId);
+		      }
+		      const btn = dom.topSessions?.querySelector(`button.like-btn[data-session-id="${sessionId}"]`);
+		      if (btn) {
+		        btn.classList.add("liked");
+		        btn.setAttribute("aria-pressed", "true");
+		        btn.title = "Liked";
+		        btn.disabled = true;
+		      }
+		    } catch (err) {
+		      console.warn("Supabase like failed", err);
+		      alert("Could not like right now.");
+		    }
+		  }
+
+ 		  async function recordSupabaseEvent(id, type) {
+ 		    const client = getSupabaseClient();
+ 		    if (!client || !id) return;
 	    try {
 	      await client.functions.invoke("record_event", { body: { id, type } });
 	    } catch (err) {
@@ -234,14 +375,15 @@
     renderMeta();
   }
 
-  async function loadTopSessions() {
-    const client = getSupabaseClient();
-    const query = (dom.sessionSearch?.value || "").trim();
-    if (client) {
-      try {
-        const { data, error } = await client.functions.invoke("list_sessions", {
-          body: { q: query || null },
-        });
+	  async function loadTopSessions() {
+	    const client = getSupabaseClient();
+	    const query = (dom.sessionSearch?.value || "").trim();
+	    if (client) {
+	      ensureSessionStatsSubscription();
+	      try {
+	        const { data, error } = await client.functions.invoke("list_sessions", {
+	          body: { q: query || null },
+	        });
         if (error) throw error;
         state.topSessions = Array.isArray(data?.sessions) ? data.sessions : [];
         renderTopSessions(dom.sessionSearch.value);
@@ -290,31 +432,39 @@
       dom.topSessions.appendChild(li);
       return;
     }
-    rows.forEach((row) => {
-      const li = document.createElement("li");
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      const title = document.createElement("div");
-      title.className = "title";
-      title.textContent = row.title;
-      const sub = document.createElement("div");
-      sub.className = "subtitle";
-      const pulls = row.plays ?? row.downloads ?? row.likes ?? 0;
-      const parts = [row.host || "Unknown"];
-      if (row.genre) parts.push(row.genre);
-      if (Array.isArray(row.tags) && row.tags.length) {
-        parts.push(row.tags.slice(0, 2).join(", "));
-      }
-      parts.push(`${pulls} pulls`);
-      sub.textContent = parts.filter(Boolean).join(" · ");
-      meta.appendChild(title);
-      meta.appendChild(sub);
-      const actions = document.createElement("div");
-      actions.className = "actions";
-      const loadBtn = document.createElement("button");
-      loadBtn.textContent = "Load";
-      loadBtn.addEventListener("click", () => loadSessionEntry(row));
-      actions.appendChild(loadBtn);
+	    rows.forEach((row) => {
+	      const li = document.createElement("li");
+	      if (row?.id) li.dataset.sessionId = row.id;
+	      const meta = document.createElement("div");
+	      meta.className = "meta";
+	      const title = document.createElement("div");
+	      title.className = "title";
+	      title.textContent = row.title;
+	      const sub = document.createElement("div");
+	      sub.className = "subtitle";
+	      if (row?.id) sub.dataset.sessionId = row.id;
+	      sub.textContent = formatTopSessionSubtitle(row);
+	      meta.appendChild(title);
+	      meta.appendChild(sub);
+	      const actions = document.createElement("div");
+	      actions.className = "actions";
+	      if (row?.id) {
+	        const likeBtn = document.createElement("button");
+	        likeBtn.className = `like-btn${isSessionLiked(row.id) ? " liked" : ""}`;
+	        likeBtn.type = "button";
+	        likeBtn.dataset.sessionId = row.id;
+	        likeBtn.textContent = "♥";
+	        likeBtn.setAttribute("aria-label", isSessionLiked(row.id) ? "Liked" : "Like session");
+	        likeBtn.setAttribute("aria-pressed", isSessionLiked(row.id) ? "true" : "false");
+	        likeBtn.title = isSessionLiked(row.id) ? "Liked" : "Like";
+	        likeBtn.disabled = isSessionLiked(row.id);
+	        likeBtn.addEventListener("click", () => likeSession(row.id));
+	        actions.appendChild(likeBtn);
+	      }
+	      const loadBtn = document.createElement("button");
+	      loadBtn.textContent = "Load";
+	      loadBtn.addEventListener("click", () => loadSessionEntry(row));
+	      actions.appendChild(loadBtn);
       li.appendChild(meta);
       li.appendChild(actions);
       dom.topSessions.appendChild(li);

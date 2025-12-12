@@ -25,6 +25,7 @@ serve(async (req) => {
   const q: string | null = body.q || null;
   const tag: string | null = body.tag || null;
   const genre: string | null = body.genre || null;
+  const hostUserId: string | null = body.host_user_id || null;
   const sort = body.sort || "new"; // new | top | trending
   const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 100);
   const offset = Math.max(Number(body.offset) || 0, 0);
@@ -33,9 +34,12 @@ serve(async (req) => {
 
   let query = supabase
     .from("sessions")
-    .select("id, slug, title, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
+    .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
     .eq("visibility", "public");
 
+  if (hostUserId) {
+    query = query.eq("host_user_id", hostUserId);
+  }
   if (q) {
     const pattern = `%${q}%`;
     query = query.or(
@@ -70,6 +74,7 @@ serve(async (req) => {
     id: row.id,
     slug: row.slug,
     title: row.title,
+    host_user_id: row.host_user_id,
     host: row.host_name,
     genre: row.genre,
     tags: row.tags,
