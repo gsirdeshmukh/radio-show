@@ -30,9 +30,13 @@ serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
-  // Optional auth gate: disabled by default when allowAnonCreate=true
-  const userId: string | null = allowAnonCreate ? null : await getUserId(req, supabase);
-  if (!allowAnonCreate && !userId) return new Response("Auth required", { status: 401 });
+  // Optional auth gate: if ALLOW_ANON_CREATE=false require a valid Supabase JWT,
+  // otherwise (when available) attach host_user_id for attribution.
+  const userId: string | null = await getUserId(req, supabase);
+  if (!allowAnonCreate && !userId) return new Response("Auth required", { status: 401, headers: corsHeaders });
+  if (userId) {
+    await supabase.from("profiles").upsert({ user_id: userId });
+  }
 
   const sessionId = crypto.randomUUID();
   const slug = slugify(payload.meta.title || "session", sessionId);

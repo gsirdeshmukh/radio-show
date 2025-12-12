@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio Show — Spotify + Voice</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' data: https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' data: https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com wss://*.supabase.co wss://*.supabase.net; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,6 +77,27 @@
         <input id="master-volume" type="range" min="0" max="100" value="80" />
       </div>
       <p class="note">Scopes needed: streaming, user-modify-playback-state, user-read-playback-state, user-read-private, user-read-email (for profile sync). The SDK spins up a local player called <strong>Radio Show Deck</strong>.</p>
+
+      <div class="divider"></div>
+      <div class="subhead">Supabase</div>
+      <label class="field">
+        <span>Supabase URL</span>
+        <input id="supabase-url" type="text" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Supabase anon key</span>
+        <input id="supabase-key" type="password" placeholder="anon/public key" autocomplete="off" />
+      </label>
+      <div class="subhead">Supabase Auth</div>
+      <label class="field">
+        <span>Email</span>
+        <input id="supabase-email" type="text" placeholder="you@example.com" autocomplete="email" />
+      </label>
+      <div class="row wrap">
+        <button id="supabase-signin" class="ghost small">Email Link</button>
+        <button id="supabase-signout" class="ghost small" disabled>Sign Out</button>
+        <span class="hint" id="supabase-auth-status">supabase: signed out</span>
+      </div>
     </section>
 
     <section class="panel search">
@@ -172,16 +193,20 @@
 	        <h2>Sessions</h2>
 	        <span class="hint" id="sessions-status">—</span>
 	      </div>
-	      <div class="row wrap">
-	        <input id="sessions-search" type="text" placeholder="Search sessions" />
-	        <select id="sessions-sort">
-	          <option value="new">Newest</option>
-	          <option value="plays">Most plays</option>
-	          <option value="downloads">Most downloads</option>
-	          <option value="likes">Most likes</option>
-	        </select>
-	        <button id="sessions-refresh" class="ghost small">Refresh</button>
-	      </div>
+      <div class="row wrap">
+        <input id="sessions-search" type="text" placeholder="Search sessions" />
+        <select id="sessions-sort">
+          <option value="new">Newest</option>
+          <option value="plays">Most plays</option>
+          <option value="downloads">Most downloads</option>
+          <option value="likes">Most likes</option>
+        </select>
+        <label class="field small">
+          <span>Mine</span>
+          <input id="sessions-mine" type="checkbox" />
+        </label>
+        <button id="sessions-refresh" class="ghost small">Refresh</button>
+      </div>
 	      <ul id="sessions-list" class="list"></ul>
 	    </section>
 

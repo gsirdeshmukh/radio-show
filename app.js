@@ -14,9 +14,10 @@
     "user-read-private",
     "user-read-email",
   ];
-  const SCOPES = REQUIRED_SCOPES.join(" ");
-  const SUPABASE_URL_KEY = "rs_supabase_url";
-  const SUPABASE_ANON_KEY = "rs_supabase_anon";
+	  const SCOPES = REQUIRED_SCOPES.join(" ");
+	  const SUPABASE_URL_KEY = "rs_supabase_url";
+	  const SUPABASE_ANON_KEY = "rs_supabase_anon";
+	  const LIKED_SESSIONS_KEY = "rs_liked_sessions";
 
   const state = {
     token: "",
@@ -44,22 +45,26 @@
     tickerTimer: null,
     tickerIndex: 0,
     focusSegmentId: null,
-    overlayRecorder: null,
-    overlayChunks: [],
-    overlaySegment: null,
-    overlayOriginalVolume: null,
-    overlayMonitor: null,
-    overlayRecording: false,
-	    supabase: null,
-	    supabaseUrl: "",
-	    supabaseKey: "",
-	    spotifyProfile: null,
-	    sessions: [],
-	    sessionsQuery: "",
-	    sessionsSort: "new",
-	    sessionsLoading: false,
-	    sessionsSearchTimer: null,
-	  };
+	    overlayRecorder: null,
+	    overlayChunks: [],
+	    overlaySegment: null,
+	    overlayOriginalVolume: null,
+	    overlayMonitor: null,
+	    overlayRecording: false,
+		    supabase: null,
+		    supabaseUrl: "",
+		    supabaseKey: "",
+		    supabaseAuthSub: null,
+		    supabaseSession: null,
+		    spotifyProfile: null,
+		    sessions: [],
+		    sessionsQuery: "",
+		    sessionsSort: "new",
+		    sessionsLoading: false,
+		    sessionsSearchTimer: null,
+		    sessionsStatsChannel: null,
+		    likedSessions: new Set(),
+		  };
 
   const sdkReady = new Promise((resolve) => {
     if (window.Spotify) {
@@ -126,17 +131,22 @@
     dom.listenProgress = document.getElementById("listen-progress");
     dom.listenTotal = document.getElementById("listen-total");
     dom.multiSeed = document.getElementById("multi-seed");
-    dom.supabaseUrlInput = document.getElementById("supabase-url");
-	    dom.supabaseKeyInput = document.getElementById("supabase-key");
-	    dom.profileAvatar = document.getElementById("profile-avatar");
-	    dom.profileName = document.getElementById("profile-name");
-	    dom.sessionsPanel = document.getElementById("sessions-panel");
-	    dom.sessionsList = document.getElementById("sessions-list");
-	    dom.sessionsSearch = document.getElementById("sessions-search");
-	    dom.sessionsSort = document.getElementById("sessions-sort");
-	    dom.sessionsRefresh = document.getElementById("sessions-refresh");
-	    dom.sessionsStatus = document.getElementById("sessions-status");
-	  }
+	    dom.supabaseUrlInput = document.getElementById("supabase-url");
+		    dom.supabaseKeyInput = document.getElementById("supabase-key");
+		    dom.supabaseEmailInput = document.getElementById("supabase-email");
+		    dom.supabaseSignInBtn = document.getElementById("supabase-signin");
+		    dom.supabaseSignOutBtn = document.getElementById("supabase-signout");
+		    dom.supabaseAuthStatus = document.getElementById("supabase-auth-status");
+		    dom.profileAvatar = document.getElementById("profile-avatar");
+		    dom.profileName = document.getElementById("profile-name");
+		    dom.sessionsPanel = document.getElementById("sessions-panel");
+		    dom.sessionsList = document.getElementById("sessions-list");
+		    dom.sessionsSearch = document.getElementById("sessions-search");
+		    dom.sessionsSort = document.getElementById("sessions-sort");
+		    dom.sessionsMine = document.getElementById("sessions-mine");
+		    dom.sessionsRefresh = document.getElementById("sessions-refresh");
+		    dom.sessionsStatus = document.getElementById("sessions-status");
+		  }
 
   function showInlineRecommendations(seedSegment, recs) {
     const dropdowns = document.querySelectorAll(".dropdown-menu");
@@ -239,29 +249,38 @@
 	        loadSupabaseSessions();
 	      });
 	    }
-	    if (dom.supabaseKeyInput) {
-	      dom.supabaseKeyInput.addEventListener("change", () => {
-	        initSupabaseClient();
-	        loadSupabaseSessions();
-	      });
-	    }
-	    if (dom.sessionsSearch) {
-	      dom.sessionsSearch.addEventListener("input", () => {
-	        clearTimeout(state.sessionsSearchTimer);
-	        state.sessionsSearchTimer = setTimeout(() => {
-	          state.sessionsQuery = (dom.sessionsSearch.value || "").trim();
-	          loadSupabaseSessions();
-	        }, 250);
-	      });
-	    }
-	    if (dom.sessionsSort) {
-	      dom.sessionsSort.addEventListener("change", () => {
-	        state.sessionsSort = dom.sessionsSort.value || "new";
-	        loadSupabaseSessions();
-	      });
-	    }
-	    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
-	    }
+		    if (dom.supabaseKeyInput) {
+		      dom.supabaseKeyInput.addEventListener("change", () => {
+		        initSupabaseClient();
+		        loadSupabaseSessions();
+		      });
+		    }
+		    if (dom.supabaseSignInBtn) {
+		      dom.supabaseSignInBtn.addEventListener("click", supabaseSignIn);
+		    }
+		    if (dom.supabaseSignOutBtn) {
+		      dom.supabaseSignOutBtn.addEventListener("click", supabaseSignOut);
+		    }
+		    if (dom.sessionsSearch) {
+		      dom.sessionsSearch.addEventListener("input", () => {
+		        clearTimeout(state.sessionsSearchTimer);
+		        state.sessionsSearchTimer = setTimeout(() => {
+		          state.sessionsQuery = (dom.sessionsSearch.value || "").trim();
+		          loadSupabaseSessions();
+		        }, 250);
+		      });
+		    }
+		    if (dom.sessionsSort) {
+		      dom.sessionsSort.addEventListener("change", () => {
+		        state.sessionsSort = dom.sessionsSort.value || "new";
+		        loadSupabaseSessions();
+		      });
+		    }
+		    if (dom.sessionsMine) {
+		      dom.sessionsMine.addEventListener("change", () => loadSupabaseSessions());
+		    }
+		    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
+		    }
 	    document.addEventListener("keydown", handleHotkeys);
     dom.status &&
       (dom.status.title =
@@ -359,52 +378,282 @@
 	    }
     const url =
       (dom.supabaseUrlInput?.value || "").trim() || localStorage.getItem(SUPABASE_URL_KEY) || "";
-    const anon =
-      (dom.supabaseKeyInput?.value || "").trim() || localStorage.getItem(SUPABASE_ANON_KEY) || "";
-    if (!url || !anon) {
-      state.supabase = null;
-      state.supabaseUrl = "";
-      state.supabaseKey = "";
-      localStorage.removeItem(SUPABASE_URL_KEY);
-      localStorage.removeItem(SUPABASE_ANON_KEY);
-      return null;
-    }
-    if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
-      return state.supabase;
-    }
-    try {
-      state.supabase = window.supabase.createClient(url, anon);
-      state.supabaseUrl = url;
-      state.supabaseKey = anon;
-      localStorage.setItem(SUPABASE_URL_KEY, url);
-      localStorage.setItem(SUPABASE_ANON_KEY, anon);
-      return state.supabase;
-    } catch (err) {
-      console.warn("Supabase init failed", err);
-      state.supabase = null;
-      return null;
+	    const anon =
+	      (dom.supabaseKeyInput?.value || "").trim() || localStorage.getItem(SUPABASE_ANON_KEY) || "";
+	    if (!url || !anon) {
+	      if (state.sessionsStatsChannel) {
+	        try {
+	          state.sessionsStatsChannel.unsubscribe().catch(() => {});
+	        } catch {
+	          // ignore
+	        }
+	        state.sessionsStatsChannel = null;
+	      }
+	      if (state.supabaseAuthSub) {
+	        try {
+	          state.supabaseAuthSub.unsubscribe();
+	        } catch {
+	          // ignore
+	        }
+	        state.supabaseAuthSub = null;
+	      }
+	      state.supabaseSession = null;
+	      state.supabase = null;
+	      state.supabaseUrl = "";
+	      state.supabaseKey = "";
+	      localStorage.removeItem(SUPABASE_URL_KEY);
+	      localStorage.removeItem(SUPABASE_ANON_KEY);
+	      return null;
 	    }
-	  }
-
-	  async function loadSupabaseSessions() {
-	    if (!dom.sessionsList) return;
-	    const client = initSupabaseClient();
-	    if (!client) {
-	      state.sessions = [];
-	      renderSupabaseSessions();
-	      setSessionsStatus("Supabase not configured");
-	      return;
+	    if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
+	      return state.supabase;
 	    }
-	    state.sessionsLoading = true;
-	    setSessionsStatus("Loading…");
 	    try {
-	      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
-	      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
-	      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
-	      const { data, error } = await client.functions.invoke("list_sessions", {
-	        body: { q, sort: functionSort, limit: 50 },
-	      });
-	      if (error) throw error;
+	      if (state.sessionsStatsChannel) {
+	        try {
+	          state.sessionsStatsChannel.unsubscribe().catch(() => {});
+	        } catch {
+	          // ignore
+	        }
+	        state.sessionsStatsChannel = null;
+	      }
+	      if (state.supabaseAuthSub) {
+	        try {
+	          state.supabaseAuthSub.unsubscribe();
+	        } catch {
+	          // ignore
+	        }
+	        state.supabaseAuthSub = null;
+	      }
+	      state.supabaseSession = null;
+	      state.supabase = window.supabase.createClient(url, anon);
+	      state.supabaseUrl = url;
+	      state.supabaseKey = anon;
+	      localStorage.setItem(SUPABASE_URL_KEY, url);
+	      localStorage.setItem(SUPABASE_ANON_KEY, anon);
+	      ensureSupabaseAuth();
+	      ensureSessionsStatsSubscription();
+	      return state.supabase;
+	    } catch (err) {
+	      console.warn("Supabase init failed", err);
+	      state.supabase = null;
+	      return null;
+		    }
+		  }
+
+			  function ensureSupabaseAuth() {
+			    const client = state.supabase;
+			    if (!client || state.supabaseAuthSub) return;
+			    try {
+			      const { data } = client.auth.onAuthStateChange((_event, session) => {
+			        state.supabaseSession = session || null;
+			        renderSupabaseAuthStatus();
+			        if (dom.sessionsMine?.checked) loadSupabaseSessions();
+			      });
+			      state.supabaseAuthSub = data?.subscription || null;
+			      client.auth
+			        .getSession()
+			        .then(({ data }) => {
+			          state.supabaseSession = data?.session || null;
+			          renderSupabaseAuthStatus();
+			        })
+			        .catch(() => {});
+			    } catch (err) {
+			      console.warn("Supabase auth init failed", err);
+			    }
+			  }
+
+			  function renderSupabaseAuthStatus() {
+			    const email = state.supabaseSession?.user?.email || "";
+			    const authed = !!email;
+			    if (dom.supabaseAuthStatus) {
+			      dom.supabaseAuthStatus.textContent = authed ? `supabase: ${email}` : "supabase: signed out";
+			    }
+			    if (dom.supabaseSignInBtn) dom.supabaseSignInBtn.disabled = authed;
+			    if (dom.supabaseSignOutBtn) dom.supabaseSignOutBtn.disabled = !authed;
+			    if (dom.sessionsMine) {
+			      const wasChecked = dom.sessionsMine.checked;
+			      dom.sessionsMine.disabled = !authed;
+			      if (!authed && wasChecked) {
+			        dom.sessionsMine.checked = false;
+			        loadSupabaseSessions();
+			      }
+			    }
+			  }
+
+			  function getSupabaseAuthHeaders() {
+			    const token = state.supabaseSession?.access_token || "";
+			    return token ? { Authorization: `Bearer ${token}` } : {};
+			  }
+
+			  async function supabaseSignIn() {
+			    const client = initSupabaseClient();
+			    if (!client) {
+			      alert("Supabase not configured");
+			      return;
+			    }
+			    const email = (dom.supabaseEmailInput?.value || "").trim();
+			    if (!email) {
+			      alert("Enter an email address first.");
+			      return;
+			    }
+			    try {
+			      const redirect = `${window.location.origin}${window.location.pathname}`;
+			      const { error } = await client.auth.signInWithOtp({
+			        email,
+			        options: { emailRedirectTo: redirect },
+			      });
+			      if (error) throw error;
+			      alert("Check your email for the sign-in link.");
+			    } catch (err) {
+			      console.warn("Supabase sign-in failed", err);
+			      alert("Supabase sign-in failed; check console.");
+			    }
+			  }
+
+			  async function supabaseSignOut() {
+			    const client = initSupabaseClient();
+			    if (!client) return;
+			    try {
+			      await client.auth.signOut();
+			    } catch (err) {
+			      console.warn("Supabase sign-out failed", err);
+			    }
+			  }
+
+			  function ensureSessionsStatsSubscription() {
+			    const client = state.supabase;
+			    if (!client || state.sessionsStatsChannel) return;
+			    try {
+		      state.sessionsStatsChannel = client
+		        .channel("rs-session-stats")
+		        .on(
+		          "postgres_changes",
+		          { event: "*", schema: "public", table: "session_stats" },
+		          (payload) => {
+		            const next = payload?.new || null;
+		            if (!next?.session_id) return;
+		            applySessionStats(next.session_id, next);
+		          }
+		        )
+		        .subscribe();
+		    } catch (err) {
+		      console.warn("Supabase realtime subscribe failed", err);
+		      state.sessionsStatsChannel = null;
+		    }
+		  }
+
+		  function applySessionStats(sessionId, stats) {
+		    if (!sessionId || !stats) return;
+		    const sessions = state.sessions || [];
+		    const idx = sessions.findIndex((s) => s?.id === sessionId);
+		    if (idx === -1) return;
+		    const row = sessions[idx];
+		    row.plays = stats.plays ?? row.plays ?? 0;
+		    row.downloads = stats.downloads ?? row.downloads ?? 0;
+		    row.likes = stats.likes ?? row.likes ?? 0;
+		    patchSessionSubtitle(sessionId);
+		  }
+
+		  function formatSessionStatsText(row) {
+		    const plays = row?.plays ?? 0;
+		    const downloads = row?.downloads ?? 0;
+		    const likes = row?.likes ?? 0;
+		    return `${plays} plays · ${downloads} downloads · ${likes} likes`;
+		  }
+
+		  function formatSessionSubtitle(row) {
+		    const stats = formatSessionStatsText(row);
+		    const bits = [row?.host || "Unknown", row?.genre || null, stats].filter(Boolean);
+		    return bits.join(" · ");
+		  }
+
+		  function patchSessionSubtitle(sessionId) {
+		    if (!dom.sessionsList || !sessionId) return;
+		    const target = dom.sessionsList.querySelector(`.subtitle[data-session-id="${sessionId}"]`);
+		    if (!target) return;
+		    const row = (state.sessions || []).find((s) => s?.id === sessionId);
+		    if (!row) return;
+		    target.textContent = formatSessionSubtitle(row);
+		  }
+
+		  function hydrateLikedSessions() {
+		    try {
+		      const raw = localStorage.getItem(LIKED_SESSIONS_KEY);
+		      if (!raw) return;
+		      const ids = JSON.parse(raw);
+		      if (!Array.isArray(ids)) return;
+		      state.likedSessions = new Set(ids.filter((x) => typeof x === "string" && x));
+		    } catch {
+		      state.likedSessions = new Set();
+		    }
+		  }
+
+		  function persistLikedSessions() {
+		    try {
+		      localStorage.setItem(LIKED_SESSIONS_KEY, JSON.stringify(Array.from(state.likedSessions || [])));
+		    } catch {
+		      // ignore
+		    }
+		  }
+
+		  function isSessionLiked(sessionId) {
+		    return !!sessionId && state.likedSessions instanceof Set && state.likedSessions.has(sessionId);
+		  }
+
+		  async function likeSession(sessionId) {
+		    if (!sessionId || isSessionLiked(sessionId)) return;
+		    const client = initSupabaseClient();
+		    if (!client) {
+		      alert("Supabase not configured");
+		      return;
+		    }
+		    try {
+		      const { error } = await client.functions.invoke("record_event", {
+		        body: { id: sessionId, type: "like" },
+		      });
+		      if (error) throw error;
+		      state.likedSessions.add(sessionId);
+		      persistLikedSessions();
+		      const row = (state.sessions || []).find((s) => s?.id === sessionId);
+		      if (row) {
+		        row.likes = (row.likes ?? 0) + 1;
+		        patchSessionSubtitle(sessionId);
+		      }
+		      const btn = dom.sessionsList?.querySelector(`button.like-btn[data-session-id="${sessionId}"]`);
+		      if (btn) {
+		        btn.classList.add("liked");
+		        btn.setAttribute("aria-pressed", "true");
+		        btn.title = "Liked";
+		        btn.disabled = true;
+		      }
+		    } catch (err) {
+		      console.warn("Supabase like failed", err);
+		      alert("Could not like right now.");
+		    }
+		  }
+
+		  async function loadSupabaseSessions() {
+		    if (!dom.sessionsList) return;
+		    const client = initSupabaseClient();
+		    if (!client) {
+		      state.sessions = [];
+	      renderSupabaseSessions();
+		      setSessionsStatus("Supabase not configured");
+		      return;
+		    }
+		    ensureSessionsStatsSubscription();
+		    state.sessionsLoading = true;
+		    setSessionsStatus("Loading…");
+		    try {
+		      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
+		      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
+		      const host_user_id = dom.sessionsMine?.checked ? state.supabaseSession?.user?.id || null : null;
+		      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
+		      const { data, error } = await client.functions.invoke("list_sessions", {
+		        body: { q, sort: functionSort, limit: 50, host_user_id },
+		      });
+		      if (error) throw error;
 	      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
 	      state.sessions =
 	        sortKey === "likes"
@@ -442,26 +691,39 @@
 	      dom.sessionsList.appendChild(li);
 	      return;
 	    }
-	    sessions.forEach((row) => {
-	      const li = document.createElement("li");
-	      const meta = document.createElement("div");
-	      meta.className = "meta";
-	      const title = document.createElement("div");
-	      title.className = "title";
-	      title.textContent = row.title || row.slug || row.id || "Untitled";
-	      const sub = document.createElement("div");
-	      sub.className = "subtitle";
-	      const stats = `${row.plays ?? 0} plays · ${row.downloads ?? 0} downloads · ${row.likes ?? 0} likes`;
-	      const bits = [row.host || "Unknown", row.genre || null, stats].filter(Boolean);
-	      sub.textContent = bits.join(" · ");
-	      meta.appendChild(title);
-	      meta.appendChild(sub);
-	      const actions = document.createElement("div");
-	      actions.className = "actions";
-	      const loadBtn = document.createElement("button");
-	      loadBtn.textContent = "Load";
-	      loadBtn.addEventListener("click", () => loadSupabaseSession(row));
-	      actions.appendChild(loadBtn);
+		    sessions.forEach((row) => {
+		      const li = document.createElement("li");
+		      if (row?.id) li.dataset.sessionId = row.id;
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = row.title || row.slug || row.id || "Untitled";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      if (row?.id) sub.dataset.sessionId = row.id;
+		      sub.textContent = formatSessionSubtitle(row);
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      const actions = document.createElement("div");
+		      actions.className = "actions";
+		      if (row?.id) {
+		        const likeBtn = document.createElement("button");
+		        likeBtn.className = `like-btn${isSessionLiked(row.id) ? " liked" : ""}`;
+		        likeBtn.type = "button";
+		        likeBtn.dataset.sessionId = row.id;
+		        likeBtn.textContent = "♥";
+		        likeBtn.setAttribute("aria-label", isSessionLiked(row.id) ? "Liked" : "Like session");
+		        likeBtn.setAttribute("aria-pressed", isSessionLiked(row.id) ? "true" : "false");
+		        likeBtn.title = isSessionLiked(row.id) ? "Liked" : "Like";
+		        likeBtn.disabled = isSessionLiked(row.id);
+		        likeBtn.addEventListener("click", () => likeSession(row.id));
+		        actions.appendChild(likeBtn);
+		      }
+		      const loadBtn = document.createElement("button");
+		      loadBtn.textContent = "Load";
+		      loadBtn.addEventListener("click", () => loadSupabaseSession(row));
+		      actions.appendChild(loadBtn);
 	      li.appendChild(meta);
 	      li.appendChild(actions);
 	      dom.sessionsList.appendChild(li);
@@ -534,22 +796,24 @@
 	    }
 	  }
 
-	  // Initialize defaults and parse callback params
-	  document.addEventListener("DOMContentLoaded", () => {
-    assignDom();
-    bindEvents();
-    renderProfileChip(null);
-    setStatus("spotify: disconnected", false);
-    // Always use the GitHub Pages redirect for PKCE.
-    state.redirectUri = DEFAULT_REDIRECT;
-    dom.redirectInput.value = state.redirectUri;
-	    const storedClientId = sessionStorage.getItem("rs_client_id");
-	    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
-	    state.clientId = dom.clientIdInput.value;
-	    hydrateSupabaseConfig();
-	    loadSupabaseSessions();
-	    applySavedTheme();
-    handlePkceCallback();
+		  // Initialize defaults and parse callback params
+		  document.addEventListener("DOMContentLoaded", () => {
+	    assignDom();
+	    bindEvents();
+	    renderProfileChip(null);
+	    setStatus("spotify: disconnected", false);
+	    hydrateLikedSessions();
+	    // Always use the GitHub Pages redirect for PKCE.
+	    state.redirectUri = DEFAULT_REDIRECT;
+	    dom.redirectInput.value = state.redirectUri;
+		    const storedClientId = sessionStorage.getItem("rs_client_id");
+		    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
+		    state.clientId = dom.clientIdInput.value;
+		    hydrateSupabaseConfig();
+		    renderSupabaseAuthStatus();
+		    loadSupabaseSessions();
+		    applySavedTheme();
+	    handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
     const storedToken = sessionStorage.getItem("rs_token");
@@ -688,14 +952,15 @@
   async function syncProfileToSupabase(profile) {
     if (!profile) return;
     const client = initSupabaseClient();
-    if (!client) return;
-    try {
-      await client.functions.invoke("sync_spotify_profile", {
-        body: {
-          spotify_id: profile.id,
-          display_name: profile.display_name,
-          email: profile.email,
-          avatar_url: profile.images?.[0]?.url,
+	    if (!client) return;
+	    try {
+	      await client.functions.invoke("sync_spotify_profile", {
+	        headers: getSupabaseAuthHeaders(),
+	        body: {
+	          spotify_id: profile.id,
+	          display_name: profile.display_name,
+	          email: profile.email,
+	          avatar_url: profile.images?.[0]?.url,
           country: profile.country,
           product: profile.product,
         },
@@ -2321,18 +2586,19 @@
     URL.revokeObjectURL(url);
   }
 
-  async function publishToSupabase() {
-    const client = initSupabaseClient();
-    if (!client) {
-      alert("Set Supabase URL + anon key first.");
-      return;
-    }
-    try {
-      const payload = await buildSessionPayload({ tracksOnly: false });
-	      const { data, error } = await client.functions.invoke("create_session", {
-	        body: { payload },
-	      });
-	      if (error) throw error;
+	  async function publishToSupabase() {
+	    const client = initSupabaseClient();
+	    if (!client) {
+	      alert("Set Supabase URL + anon key first.");
+	      return;
+	    }
+	    try {
+	      const payload = await buildSessionPayload({ tracksOnly: false });
+		      const { data, error } = await client.functions.invoke("create_session", {
+		        headers: getSupabaseAuthHeaders(),
+		        body: { payload },
+		      });
+		      if (error) throw error;
 	      const slug = data?.slug || data?.id || "";
 	      loadSupabaseSessions();
 	      alert(slug ? `Published to Supabase (${slug}).` : "Published to Supabase.");
