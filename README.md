@@ -4,7 +4,7 @@ Minimal, arcade-styled web deck that stitches Spotify tracks with your own voice
 
 ## What you need
 - Spotify Premium account.
-- Short-lived Spotify OAuth token with scopes: `user-modify-playback-state`, `streaming`, `user-read-playback-state`, `user-library-read`, `playlist-read-private`, `playlist-read-collaborative`.
+- Short-lived Spotify OAuth token with scopes: `user-modify-playback-state`, `streaming`, `user-read-playback-state`, `user-library-read`, `playlist-read-private`, `playlist-read-collaborative`, `user-read-private`, `user-read-email`.
 - Modern desktop browser with mic access.
 
 ## Run it
@@ -44,3 +44,11 @@ GitHub Pages example (free HTTPS):
 - Theme dots in the header let you swap color palettes live.
 - Save/Load: export full shows (with voice clips or uploads embedded as data URLs) or tracks only; load JSON back in. Auto-saves metadata to localStorage.
 - Listener view can pull curated sessions from `sessions/top-sessions.json` (static, same-origin) and features a bottom progress bar with seeking.
+
+## Supabase + profiles (scaffolded)
+- In the **Connect** panel, add your `Supabase URL` and `anon/public key` (stored in localStorage). A new **Publish to Supabase** button will send the full show JSON to an Edge Function named `create_session`.
+- Spotify PKCE now requests `user-read-private` + `user-read-email`; after auth the app pulls your Spotify profile, shows your avatar/name in the header, and defaults the Host field. A `sync_spotify_profile` Edge Function is invoked when available.
+- Listener view uses a `list_sessions` Edge Function if Supabase is configured (falls back to `sessions/top-sessions.json`). Clicking a row will call `get_session` (when available) or fetch the provided JSON URL; Supabase Storage origins are allowed.
+- Suggested tables: `profiles` (user_id PK, display_name, avatar_url), `spotify_profiles` (user_id FK, spotify_id, display_name, avatar_url, email, country, product, last_sync_at), `sessions` (id/slug, title, host_user_id, host_name, genre, tags jsonb, duration_ms, track_count, cover_url, visibility, version, created_at, updated_at), `session_assets` (session_id, type, path, duration_ms), `session_stats` (session_id, plays, downloads, likes, last_played_at).
+- Suggested Edge Functions: `create_session` (auth required; accepts full show payload, uploads JSON/assets, returns slug/json_url), `list_sessions` (public; search/filter/sort), `get_session` (public; returns metadata + signed asset/JSON URLs), `record_event` (public; increments plays/downloads/likes), `sync_spotify_profile` (auth; upserts profile + spotify_profiles).
+- See `supabase/README.md` and `supabase/schema.sql` for the deployable schema and function setup.

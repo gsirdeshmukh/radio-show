@@ -4,13 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio-Lab Listener</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com wss://*.spotify.com; img-src 'self' data: https://i.scdn.co; media-src 'self' data: blob:; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <script src="https://sdk.scdn.co/spotify-player.js" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div class="noise"></div>
@@ -74,7 +75,7 @@
     <section class="panel">
       <div class="panel-head">
         <h2>Top Sessions</h2>
-        <span class="hint">static JSON catalog</span>
+        <span class="hint">Supabase-backed (falls back to static)</span>
       </div>
       <div class="row wrap">
         <button id="refresh-top-btn" class="ghost small">Refresh</button>

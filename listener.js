@@ -1,4 +1,7 @@
 (() => {
+  const SUPABASE_URL_KEY = "rs_supabase_url";
+  const SUPABASE_ANON_KEY = "rs_supabase_anon";
+
   const state = {
     token: "",
     player: null,
@@ -17,6 +20,9 @@
     segmentStopHandler: null,
     currentSegment: null,
     progressRaf: null,
+    supabase: null,
+    supabaseUrl: "",
+    supabaseKey: "",
   };
 
   const sdkReady = new Promise((resolve) => {
@@ -62,6 +68,26 @@
     dom.barProgressFill = document.getElementById("bar-progress-fill");
   }
 
+  function getSupabaseClient() {
+    if (typeof window === "undefined" || !window.supabase) return null;
+    const url = localStorage.getItem(SUPABASE_URL_KEY) || "";
+    const anon = localStorage.getItem(SUPABASE_ANON_KEY) || "";
+    if (!url || !anon) return null;
+    if (state.supabase && state.supabaseUrl === url && state.supabaseKey === anon) {
+      return state.supabase;
+    }
+    try {
+      state.supabase = window.supabase.createClient(url, anon);
+      state.supabaseUrl = url;
+      state.supabaseKey = anon;
+      return state.supabase;
+    } catch (err) {
+      console.warn("Supabase init failed", err);
+      state.supabase = null;
+      return null;
+    }
+  }
+
   function bindEvents() {
     dom.connectBtn.addEventListener("click", connectSpotify);
     dom.fileInput.addEventListener("change", handleFile);
@@ -70,7 +96,7 @@
     dom.prevBtn.addEventListener("click", playPrev);
     dom.nextBtn.addEventListener("click", playNext);
     dom.refreshTopBtn.addEventListener("click", loadTopSessions);
-    dom.sessionSearch.addEventListener("input", () => renderTopSessions(dom.sessionSearch.value));
+    dom.sessionSearch.addEventListener("input", () => loadTopSessions());
     dom.barPlay.addEventListener("click", playShow);
     dom.barStop.addEventListener("click", stopShow);
     dom.barProgress.addEventListener("click", handleSeek);
@@ -192,6 +218,21 @@
   }
 
   async function loadTopSessions() {
+    const client = getSupabaseClient();
+    const query = (dom.sessionSearch?.value || "").trim();
+    if (client) {
+      try {
+        const { data, error } = await client.functions.invoke("list_sessions", {
+          body: { q: query || null },
+        });
+        if (error) throw error;
+        state.topSessions = Array.isArray(data?.sessions) ? data.sessions : [];
+        renderTopSessions(dom.sessionSearch.value);
+        return;
+      } catch (err) {
+        console.warn("Supabase sessions fetch failed", err);
+      }
+    }
     try {
       const res = await fetch("sessions/top-sessions.json", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -241,14 +282,21 @@
       title.textContent = row.title;
       const sub = document.createElement("div");
       sub.className = "subtitle";
-      sub.textContent = `${row.host || "Unknown"} · ${row.downloads || 0} pulls`;
+      const pulls = row.plays ?? row.downloads ?? row.likes ?? 0;
+      const parts = [row.host || "Unknown"];
+      if (row.genre) parts.push(row.genre);
+      if (Array.isArray(row.tags) && row.tags.length) {
+        parts.push(row.tags.slice(0, 2).join(", "));
+      }
+      parts.push(`${pulls} pulls`);
+      sub.textContent = parts.filter(Boolean).join(" · ");
       meta.appendChild(title);
       meta.appendChild(sub);
       const actions = document.createElement("div");
       actions.className = "actions";
       const loadBtn = document.createElement("button");
       loadBtn.textContent = "Load";
-      loadBtn.addEventListener("click", () => loadSessionFromUrl(row.url));
+      loadBtn.addEventListener("click", () => loadSessionEntry(row));
       actions.appendChild(loadBtn);
       li.appendChild(meta);
       li.appendChild(actions);
@@ -256,10 +304,37 @@
     });
   }
 
+  async function loadSessionEntry(entry) {
+    try {
+      const client = getSupabaseClient();
+      if (client && (entry?.id || entry?.slug) && !entry?.url && !entry?.json_url) {
+        const { data, error } = await client.functions.invoke("get_session", {
+          body: { id: entry.id, slug: entry.slug },
+        });
+        if (error) throw error;
+        const resolved = resolveSessionUrl(data);
+        if (resolved) {
+          await loadSessionFromUrl(resolved);
+          return;
+        }
+      }
+      const resolved = resolveSessionUrl(entry);
+      if (!resolved) throw new Error("No session URL");
+      await loadSessionFromUrl(resolved);
+    } catch (err) {
+      alert(`Could not load session: ${err.message}`);
+    }
+  }
+
+  function resolveSessionUrl(entry) {
+    if (!entry) return null;
+    return entry.json_url || entry.url || entry.storage_path || entry.path || null;
+  }
+
   async function loadSessionFromUrl(url) {
     try {
       if (!isSafeSessionUrl(url)) {
-        alert("Only same-site session files are allowed.");
+        alert("Only same-site or Supabase-hosted session files are allowed.");
         return;
       }
       const res = await fetch(url, { cache: "no-store" });
@@ -554,7 +629,16 @@
     if (url.startsWith("data:")) return true;
     try {
       const parsed = new URL(url, window.location.origin);
-      return parsed.origin === window.location.origin;
+      const allowed = new Set([window.location.origin]);
+      const supabaseUrl = localStorage.getItem(SUPABASE_URL_KEY);
+      if (supabaseUrl) {
+        try {
+          allowed.add(new URL(supabaseUrl).origin);
+        } catch {
+          // ignore parse errors
+        }
+      }
+      return allowed.has(parsed.origin);
     } catch {
       return false;
     }
