@@ -1,6 +1,9 @@
 (() => {
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
   const DEFAULT_REDIRECT = "https://gsirdeshmukh.github.io/radio-show/";
+  const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
+  const DEFAULT_SUPABASE_ANON =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
   const REQUIRED_SCOPES = [
     "streaming",
     "user-modify-playback-state",
@@ -297,13 +300,19 @@
   }
 
   function hydrateSupabaseConfig() {
-    const storedUrl = localStorage.getItem(SUPABASE_URL_KEY) || "";
-    const storedKey = localStorage.getItem(SUPABASE_ANON_KEY) || "";
+    const storedUrl = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+    const storedKey = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_ANON;
     if (dom.supabaseUrlInput && !dom.supabaseUrlInput.value && storedUrl) {
       dom.supabaseUrlInput.value = storedUrl;
     }
     if (dom.supabaseKeyInput && !dom.supabaseKeyInput.value && storedKey) {
       dom.supabaseKeyInput.value = storedKey;
+    }
+    if (!localStorage.getItem(SUPABASE_URL_KEY) && storedUrl) {
+      localStorage.setItem(SUPABASE_URL_KEY, storedUrl);
+    }
+    if (!localStorage.getItem(SUPABASE_ANON_KEY) && storedKey) {
+      localStorage.setItem(SUPABASE_ANON_KEY, storedKey);
     }
     initSupabaseClient();
   }
