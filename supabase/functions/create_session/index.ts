@@ -6,19 +6,27 @@ const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || Deno.env.get("SUPABAS
 const sessionBucket = Deno.env.get("SESSION_BUCKET") || "sessions";
 const allowAnonCreate = (Deno.env.get("ALLOW_ANON_CREATE") || "true").toLowerCase() === "true";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+};
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
   let payload: any;
   try {
     const body = await req.json();
     payload = body?.payload;
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
   }
   if (!payload || !payload.meta || !Array.isArray(payload.segments)) {
-    return new Response("Missing payload.meta or payload.segments", { status: 400 });
+    return new Response("Missing payload.meta or payload.segments", { status: 400, headers: corsHeaders });
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -34,7 +42,7 @@ serve(async (req) => {
   const json = JSON.stringify(payload);
   const upload = await supabase.storage.from(sessionBucket).upload(storagePath, new Blob([json], { type: "application/json" }), { upsert: true });
   if (upload.error) {
-    return new Response(upload.error.message, { status: 500 });
+    return new Response(upload.error.message, { status: 500, headers: corsHeaders });
   }
 
   const { data: publicUrlData } = supabase.storage.from(sessionBucket).getPublicUrl(storagePath);
@@ -57,7 +65,7 @@ serve(async (req) => {
 
   const { error: insertError } = await supabase.from("sessions").insert(meta);
   if (insertError) {
-    return new Response(insertError.message, { status: 500 });
+    return new Response(insertError.message, { status: 500, headers: corsHeaders });
   }
 
   // Seed stats row
@@ -70,7 +78,7 @@ serve(async (req) => {
       json_url: jsonUrl,
       storage_path: storagePath,
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
+    { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } },
   );
 });
 
