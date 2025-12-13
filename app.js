@@ -529,18 +529,10 @@
       alert("Add your SoundCloud client ID in Auth Panel.");
       return;
     }
-    try {
-      const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=24`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("SoundCloud search failed");
-      const data = await res.json();
-      state.soundcloud.results = (data.collection || []).filter((item) => item.media?.transcodings?.length);
-      renderSoundcloudResults();
-    } catch (err) {
-      console.error(err);
-      state.soundcloud.results = [];
-      renderSoundcloudResults("SoundCloud search failed");
-    }
+    const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=24`;
+    const data = await scFetch(url);
+    state.soundcloud.results = (data.collection || []).filter((item) => item.media?.transcodings?.length);
+    renderSoundcloudResults();
   }
 
   function renderSoundcloudResults(errorText) {
@@ -626,11 +618,24 @@
     const transcoding = pickSoundcloudTranscoding(track.media?.transcodings || []);
     if (!transcoding?.url) return null;
     const url = `${transcoding.url}?client_id=${clientId}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await scFetch(url);
     track._resolvedStream = data.url;
     return track._resolvedStream;
+  }
+
+  async function scFetch(url) {
+    const tryFetch = async (target) => {
+      const res = await fetch(target);
+      if (!res.ok) throw new Error(`SC request failed ${res.status}`);
+      return res.json();
+    };
+    try {
+      return await tryFetch(url);
+    } catch (err) {
+      // fallback through CORS proxy for browser blocks
+      const proxied = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+      return await tryFetch(proxied);
+    }
   }
 
   function pickSoundcloudTranscoding(list) {
