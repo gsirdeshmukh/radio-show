@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://sdk.scdn.co/spotify-player.js" async></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"></script>
 </head>
 <body>
   <div class="noise"></div>
@@ -46,6 +47,12 @@
         <button id="clear-results-btn" class="ghost small">Clear</button>
       </div>
       <ul id="results" class="list compact-list"></ul>
+      <div class="subhead">SoundCloud (mobile-friendly)</div>
+      <form id="sc-search-form" class="row search-row">
+        <input id="sc-search-input" type="text" placeholder="Search SoundCloud..." autocomplete="off" />
+        <button type="submit" class="ghost">Search SC</button>
+      </form>
+      <ul id="sc-results" class="list compact-list"></ul>
     </section>
 
     <div class="profile-stack">
@@ -123,6 +130,11 @@
       <span>Supabase anon key</span>
       <input id="supabase-key" type="password" placeholder="anon/public key" autocomplete="off" />
     </label>
+    <div class="subhead">SoundCloud</div>
+    <label class="field">
+      <span>SoundCloud client ID</span>
+      <input id="soundcloud-client-id" type="text" placeholder="sc client id (public)" autocomplete="off" />
+    </label>
     <div class="subhead">Supabase Auth</div>
     <label class="field">
       <span>Email</span>
@@ -188,6 +200,12 @@
         <span class="hint" id="show-length">0:00</span>
       </div>
       <div class="row wrap">
+        <div class="pill">Apple Music</div>
+        <button id="apple-auth-btn" class="ghost small">Connect Apple Music</button>
+        <button id="apple-play-btn" class="ghost small" disabled>Play test track</button>
+        <span class="hint" id="apple-auth-status">not connected</span>
+      </div>
+      <div class="row wrap">
         <label class="field">
           <span>Session title</span>
           <input id="session-title" type="text" placeholder="Radio Lab Session" />
@@ -226,6 +244,7 @@
     </section>
   </main>
 
+  <section class="panel listen">
   <section class="panel listen">
     <div class="panel-head">
       <h2>Listen Mode</h2>

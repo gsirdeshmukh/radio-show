@@ -4,6 +4,9 @@
   const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
   const DEFAULT_SUPABASE_ANON =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
+  const APPLE_DEVELOPER_TOKEN = "APPLE_DEV_TOKEN_PLACEHOLDER"; // Replace with your Apple Music JWT
+  const APPLE_TEST_TRACK = "900032829"; // Replace with a real catalog track ID
+  const SOUND_CLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
   const REQUIRED_SCOPES = [
     "streaming",
     "user-modify-playback-state",
@@ -63,9 +66,20 @@
 		    sessionsLoading: false,
 		    sessionsSearchTimer: null,
 		    sessionsStatsChannel: null,
-		    likedSessions: new Set(),
-		    currentSessionId: null,
-		  };
+    likedSessions: new Set(),
+    currentSessionId: null,
+    appleMusic: {
+      instance: null,
+      authorized: false,
+      userToken: null,
+    },
+    soundcloud: {
+      clientId: "",
+      results: [],
+      audio: null,
+      playingId: null,
+    },
+  };
 
   const sdkReady = new Promise((resolve) => {
     if (window.Spotify) {
@@ -88,6 +102,9 @@
     dom.connectClose = document.getElementById("connect-close");
     dom.status = document.getElementById("spotify-status");
     dom.masterVolume = document.getElementById("master-volume");
+    dom.appleAuthBtn = document.getElementById("apple-auth-btn");
+    dom.applePlayBtn = document.getElementById("apple-play-btn");
+    dom.appleAuthStatus = document.getElementById("apple-auth-status");
     dom.searchForm = document.getElementById("search-form");
     dom.searchInput = document.getElementById("search-input");
     dom.libraryBtn = document.getElementById("library-btn");
@@ -135,11 +152,15 @@
     dom.listenTotal = document.getElementById("listen-total");
     dom.multiSeed = document.getElementById("multi-seed");
 	    dom.supabaseUrlInput = document.getElementById("supabase-url");
-		    dom.supabaseKeyInput = document.getElementById("supabase-key");
-		    dom.supabaseEmailInput = document.getElementById("supabase-email");
-		    dom.supabaseSignInBtn = document.getElementById("supabase-signin");
-		    dom.supabaseSignOutBtn = document.getElementById("supabase-signout");
-		    dom.supabaseAuthStatus = document.getElementById("supabase-auth-status");
+    dom.supabaseKeyInput = document.getElementById("supabase-key");
+    dom.supabaseEmailInput = document.getElementById("supabase-email");
+    dom.supabaseSignInBtn = document.getElementById("supabase-signin");
+    dom.supabaseSignOutBtn = document.getElementById("supabase-signout");
+    dom.supabaseAuthStatus = document.getElementById("supabase-auth-status");
+    dom.scClientIdInput = document.getElementById("soundcloud-client-id");
+    dom.scSearchForm = document.getElementById("sc-search-form");
+    dom.scSearchInput = document.getElementById("sc-search-input");
+    dom.scResults = document.getElementById("sc-results");
 		    dom.profileAvatar = document.getElementById("profile-avatar");
 		    dom.profileName = document.getElementById("profile-name");
 		    dom.sessionsPanel = document.getElementById("sessions-panel");
@@ -227,6 +248,10 @@
     dom.saveTracksBtn.addEventListener("click", () => exportShow({ tracksOnly: true }));
     dom.loadShowBtn.addEventListener("click", () => dom.loadInput.click());
     dom.loadInput.addEventListener("change", handleImport);
+    dom.scSearchForm?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      runSoundcloudSearch();
+    });
     dom.listenLoad.addEventListener("click", () => dom.listenFile.click());
     dom.listenFile.addEventListener("change", handleInlineImport);
     dom.listenPlay.addEventListener("click", () => {
@@ -241,6 +266,8 @@
     [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate].forEach((el) => {
       el.addEventListener("input", persistLocal);
     });
+    dom.appleAuthBtn?.addEventListener("click", authorizeAppleMusic);
+    dom.applePlayBtn?.addEventListener("click", playAppleTestTrack);
 	    dom.masterVolume.addEventListener("input", (e) => {
 	      state.masterVolume = Number(e.target.value) / 100;
 	      if (state.player) {
@@ -304,6 +331,15 @@
 
   function hideError() {
     if (dom.error) dom.error.style.display = "none";
+  }
+
+  function setAppleStatus(text, ready) {
+    if (dom.appleAuthStatus) {
+      dom.appleAuthStatus.textContent = text;
+    }
+    if (dom.applePlayBtn) {
+      dom.applePlayBtn.disabled = !ready;
+    }
   }
 
   function setStatus(text, connected) {
@@ -463,6 +499,197 @@
 
   function rgbToHex(r, g, b) {
     return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  function hydrateSoundcloudClientId() {
+    if (!dom.scClientIdInput) return;
+    const stored = localStorage.getItem(SOUND_CLOUD_CLIENT_ID_KEY) || "";
+    if (!dom.scClientIdInput.value) {
+      dom.scClientIdInput.value = stored;
+    }
+    state.soundcloud.clientId = (dom.scClientIdInput.value || stored || "").trim();
+    dom.scClientIdInput.addEventListener("change", () => {
+      state.soundcloud.clientId = (dom.scClientIdInput.value || "").trim();
+      localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, state.soundcloud.clientId);
+    });
+  }
+
+  function getSoundcloudClientId() {
+    const val = (dom.scClientIdInput?.value || state.soundcloud.clientId || "").trim();
+    state.soundcloud.clientId = val;
+    if (val) localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, val);
+    return val;
+  }
+
+  async function runSoundcloudSearch() {
+    const query = (dom.scSearchInput?.value || "").trim();
+    const clientId = getSoundcloudClientId();
+    if (!query) return;
+    if (!clientId) {
+      alert("Add your SoundCloud client ID in Auth Panel.");
+      return;
+    }
+    try {
+      const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=24`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("SoundCloud search failed");
+      const data = await res.json();
+      state.soundcloud.results = (data.collection || []).filter((item) => item.media?.transcodings?.length);
+      renderSoundcloudResults();
+    } catch (err) {
+      console.error(err);
+      state.soundcloud.results = [];
+      renderSoundcloudResults("SoundCloud search failed");
+    }
+  }
+
+  function renderSoundcloudResults(errorText) {
+    if (!dom.scResults) return;
+    dom.scResults.innerHTML = "";
+    if (errorText) {
+      const li = document.createElement("li");
+      li.textContent = errorText;
+      dom.scResults.appendChild(li);
+      return;
+    }
+    if (!state.soundcloud.results.length) {
+      const li = document.createElement("li");
+      li.textContent = "No SoundCloud results yet.";
+      dom.scResults.appendChild(li);
+      return;
+    }
+    state.soundcloud.results.forEach((track) => {
+      const li = document.createElement("li");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = track.title || "Untitled";
+      const subtitle = document.createElement("div");
+      subtitle.className = "subtitle";
+      subtitle.textContent = track.user?.username ? `by ${track.user.username}` : "—";
+      meta.appendChild(title);
+      meta.appendChild(subtitle);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const play = document.createElement("button");
+      const isPlaying = state.soundcloud.playingId === track.id;
+      play.textContent = isPlaying ? "Pause" : "Play";
+      play.className = isPlaying ? "primary" : "ghost";
+      play.addEventListener("click", () => togglePlaySoundcloud(track));
+      actions.appendChild(play);
+      li.appendChild(meta);
+      li.appendChild(actions);
+      dom.scResults.appendChild(li);
+    });
+  }
+
+  async function togglePlaySoundcloud(track) {
+    const clientId = getSoundcloudClientId();
+    if (!clientId) {
+      alert("Add your SoundCloud client ID in Auth Panel.");
+      return;
+    }
+    if (!state.soundcloud.audio) {
+      state.soundcloud.audio = new Audio();
+      state.soundcloud.audio.crossOrigin = "anonymous";
+      state.soundcloud.audio.addEventListener("ended", () => {
+        state.soundcloud.playingId = null;
+        renderSoundcloudResults();
+      });
+    }
+    const audio = state.soundcloud.audio;
+    if (state.soundcloud.playingId === track.id && !audio.paused) {
+      audio.pause();
+      state.soundcloud.playingId = null;
+      renderSoundcloudResults();
+      return;
+    }
+    try {
+      const streamUrl = await resolveSoundcloudStream(track, clientId);
+      if (!streamUrl) {
+        renderSoundcloudResults("No playable stream for this track.");
+        return;
+      }
+      audio.src = streamUrl;
+      await audio.play();
+      state.soundcloud.playingId = track.id;
+      renderSoundcloudResults();
+    } catch (err) {
+      console.error("SC play failed", err);
+      renderSoundcloudResults("Playback failed (check client ID or CORS).");
+    }
+  }
+
+  async function resolveSoundcloudStream(track, clientId) {
+    if (track._resolvedStream) return track._resolvedStream;
+    const transcoding = pickSoundcloudTranscoding(track.media?.transcodings || []);
+    if (!transcoding?.url) return null;
+    const url = `${transcoding.url}?client_id=${clientId}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    track._resolvedStream = data.url;
+    return track._resolvedStream;
+  }
+
+  function pickSoundcloudTranscoding(list) {
+    if (!Array.isArray(list)) return null;
+    const progressive = list.find((t) => t.format?.protocol === "progressive");
+    if (progressive) return progressive;
+    return list.find((t) => t.format?.protocol === "hls") || null;
+  }
+
+  function initMusicKit() {
+    if (!window.MusicKit || !APPLE_DEVELOPER_TOKEN) {
+      setAppleStatus("apple music: unavailable", false);
+      return;
+    }
+    try {
+      MusicKit.configure({
+        developerToken: APPLE_DEVELOPER_TOKEN,
+        app: {
+          name: "Radio Show",
+          build: "1.0.0",
+        },
+      });
+      state.appleMusic.instance = MusicKit.getInstance();
+      setAppleStatus("apple music: ready to connect", false);
+    } catch (err) {
+      console.error("MusicKit init failed", err);
+      setAppleStatus("apple music: init failed", false);
+    }
+  }
+
+  async function authorizeAppleMusic() {
+    if (!state.appleMusic.instance) {
+      setAppleStatus("apple music: not ready", false);
+      return;
+    }
+    try {
+      const token = await state.appleMusic.instance.authorize();
+      state.appleMusic.userToken = token;
+      state.appleMusic.authorized = true;
+      setAppleStatus("apple music: connected", true);
+    } catch (err) {
+      console.error("apple music auth failed", err);
+      setAppleStatus("apple music: auth failed", false);
+    }
+  }
+
+  async function playAppleTestTrack() {
+    if (!state.appleMusic.instance || !state.appleMusic.authorized) {
+      setAppleStatus("apple music: connect first", false);
+      return;
+    }
+    try {
+      await state.appleMusic.instance.setQueue({ song: APPLE_TEST_TRACK });
+      await state.appleMusic.instance.player.play();
+      setAppleStatus("apple music: playing test track", true);
+    } catch (err) {
+      console.error("apple music play failed", err);
+      setAppleStatus("apple music: play failed", true);
+    }
   }
 
   function hydrateSupabaseConfig() {
@@ -962,6 +1189,8 @@
 		    loadSupabaseSessions();
 		    applySavedTheme();
 		    applySavedFont();
+		    initMusicKit();
+		    hydrateSoundcloudClientId();
 	    handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
