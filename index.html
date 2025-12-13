@@ -52,6 +52,9 @@
         <input id="sc-search-input" type="text" placeholder="Search SoundCloud..." autocomplete="off" />
         <button type="submit" class="ghost">Search SC</button>
       </form>
+      <div class="row wrap">
+        <button id="soundcloud-likes-btn" class="ghost small" disabled>My Likes</button>
+      </div>
       <ul id="sc-results" class="list compact-list"></ul>
     </section>
 
@@ -135,6 +138,10 @@
       <span>SoundCloud client ID</span>
       <input id="soundcloud-client-id" type="text" placeholder="sc client id (public)" autocomplete="off" />
     </label>
+    <div class="row wrap">
+      <button id="soundcloud-auth-btn" class="ghost small">Authorize SoundCloud</button>
+      <span class="hint" id="soundcloud-auth-status">soundcloud: signed out</span>
+    </div>
     <div class="subhead">Supabase Auth</div>
     <label class="field">
       <span>Email</span>

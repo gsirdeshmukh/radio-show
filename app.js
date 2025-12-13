@@ -7,6 +7,7 @@
   const APPLE_DEVELOPER_TOKEN = "APPLE_DEV_TOKEN_PLACEHOLDER"; // Replace with your Apple Music JWT
   const APPLE_TEST_TRACK = "900032829"; // Replace with a real catalog track ID
   const SOUND_CLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
+  const SOUND_CLOUD_TOKEN_KEY = "rs_sc_token";
   const REQUIRED_SCOPES = [
     "streaming",
     "user-modify-playback-state",
@@ -78,6 +79,8 @@
       results: [],
       audio: null,
       playingId: null,
+      token: "",
+      profile: null,
     },
   };
 
@@ -161,6 +164,9 @@
     dom.scSearchForm = document.getElementById("sc-search-form");
     dom.scSearchInput = document.getElementById("sc-search-input");
     dom.scResults = document.getElementById("sc-results");
+    dom.scAuthBtn = document.getElementById("soundcloud-auth-btn");
+    dom.scAuthStatus = document.getElementById("soundcloud-auth-status");
+    dom.scLikesBtn = document.getElementById("soundcloud-likes-btn");
 		    dom.profileAvatar = document.getElementById("profile-avatar");
 		    dom.profileName = document.getElementById("profile-name");
 		    dom.sessionsPanel = document.getElementById("sessions-panel");
@@ -252,6 +258,8 @@
       e.preventDefault();
       runSoundcloudSearch();
     });
+    dom.scAuthBtn?.addEventListener("click", startSoundcloudAuth);
+    dom.scLikesBtn?.addEventListener("click", loadSoundcloudLikes);
     dom.listenLoad.addEventListener("click", () => dom.listenFile.click());
     dom.listenFile.addEventListener("change", handleInlineImport);
     dom.listenPlay.addEventListener("click", () => {
@@ -521,6 +529,110 @@
     return val;
   }
 
+  function clearSoundcloudToken(reason) {
+    if (reason) console.warn(reason);
+    state.soundcloud.token = "";
+    state.soundcloud.profile = null;
+    sessionStorage.removeItem(SOUND_CLOUD_TOKEN_KEY);
+    setSoundcloudStatus("soundcloud: signed out", false);
+  }
+
+  function withClientId(url, clientId) {
+    if (!clientId || url.includes("client_id=")) return url;
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}client_id=${encodeURIComponent(clientId)}`;
+  }
+
+  async function scAuthedFetch(url, token, clientId) {
+    const target = withClientId(url, clientId);
+    const headers = token ? { Authorization: `OAuth ${token}` } : {};
+    const res = await fetch(target, { headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        clearSoundcloudToken("SoundCloud token expired or invalid.");
+      }
+      let body = "";
+      try {
+        body = await res.text();
+      } catch {
+        body = "";
+      }
+      throw new Error(body || `SC request failed ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async function startSoundcloudAuth() {
+    const clientId = getSoundcloudClientId();
+    if (!clientId) {
+      alert("Add your SoundCloud client ID in Auth Panel.");
+      return;
+    }
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const authState = uid();
+    sessionStorage.setItem("rs_sc_state", authState);
+    const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&state=${encodeURIComponent(authState)}`;
+    window.location.href = url;
+  }
+
+  async function handleSoundcloudCallback() {
+    const hash = window.location.hash || "";
+    if (!hash.includes("access_token")) return;
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const token = params.get("access_token");
+    const returnedState = params.get("state");
+    const storedState = sessionStorage.getItem("rs_sc_state");
+    if (storedState && returnedState && storedState !== returnedState) {
+      alert("SoundCloud auth state mismatch. Please try again.");
+      return;
+    }
+    if (!token) return;
+    state.soundcloud.token = token;
+    sessionStorage.setItem(SOUND_CLOUD_TOKEN_KEY, token);
+    sessionStorage.removeItem("rs_sc_state");
+    const cleanUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, document.title, cleanUrl);
+    setSoundcloudStatus("soundcloud: connected", true);
+    fetchSoundcloudProfile().catch(() => {});
+  }
+
+  async function fetchSoundcloudProfile() {
+    const token = state.soundcloud.token || sessionStorage.getItem(SOUND_CLOUD_TOKEN_KEY) || "";
+    const clientId = getSoundcloudClientId();
+    if (!token || !clientId) return null;
+    state.soundcloud.token = token;
+    try {
+      const profile = await scAuthedFetch("https://api-v2.soundcloud.com/me", token, clientId);
+      state.soundcloud.profile = profile || null;
+      const name = profile?.username || profile?.full_name || "connected";
+      setSoundcloudStatus(`soundcloud: ${name}`, true);
+      return profile;
+    } catch (err) {
+      console.warn("soundcloud profile fetch failed", err);
+      setSoundcloudStatus("soundcloud: connected", true);
+      return null;
+    }
+  }
+
+  function setSoundcloudStatus(text, authed) {
+    if (dom.scAuthStatus) {
+      dom.scAuthStatus.textContent = text;
+    }
+    if (dom.scLikesBtn) dom.scLikesBtn.disabled = !authed;
+  }
+
+  function hydrateSoundcloudToken() {
+    const stored = sessionStorage.getItem(SOUND_CLOUD_TOKEN_KEY) || "";
+    if (stored) {
+      state.soundcloud.token = stored;
+      setSoundcloudStatus("soundcloud: connected", true);
+    } else {
+      setSoundcloudStatus("soundcloud: signed out", false);
+    }
+  }
+
   async function runSoundcloudSearch() {
     const query = (dom.scSearchInput?.value || "").trim();
     const clientId = getSoundcloudClientId();
@@ -533,6 +645,38 @@
     const data = await scFetch(url);
     state.soundcloud.results = (data.collection || []).filter((item) => item.media?.transcodings?.length);
     renderSoundcloudResults();
+  }
+
+  async function loadSoundcloudLikes() {
+    const clientId = getSoundcloudClientId();
+    const token = state.soundcloud.token || sessionStorage.getItem(SOUND_CLOUD_TOKEN_KEY) || "";
+    if (!clientId) {
+      alert("Add your SoundCloud client ID in Auth Panel.");
+      return;
+    }
+    if (!token) {
+      alert("Authorize SoundCloud first.");
+      return;
+    }
+    state.soundcloud.token = token;
+    renderSoundcloudResults("Loading likes…");
+    try {
+      const data = await scAuthedFetch("https://api-v2.soundcloud.com/me/likes/tracks?limit=50", token, clientId);
+      const tracks = (data.collection || [])
+        .map((item) => item?.track || item)
+        .filter((track) => track && track.media?.transcodings?.length);
+      if (!tracks.length) {
+        renderSoundcloudResults("No liked tracks (or none are streamable).");
+        return;
+      }
+      state.soundcloud.results = tracks;
+      renderSoundcloudResults();
+    } catch (err) {
+      console.warn("SoundCloud likes fetch failed", err);
+      renderSoundcloudResults(err?.message || "Could not load SoundCloud likes.");
+    } finally {
+      fetchSoundcloudProfile().catch(() => {});
+    }
   }
 
   function renderSoundcloudResults(errorText) {
@@ -1253,11 +1397,14 @@
 		    state.clientId = dom.clientIdInput.value;
 		    hydrateSupabaseConfig();
 		    renderSupabaseAuthStatus();
-		    loadSupabaseSessions();
+	    loadSupabaseSessions();
 		    applySavedTheme();
 		    applySavedFont();
 		    initMusicKit();
 		    hydrateSoundcloudClientId();
+		    hydrateSoundcloudToken();
+		    handleSoundcloudCallback();
+		    fetchSoundcloudProfile().catch(() => {});
 	    handlePkceCallback();
     restoreLocal();
     hydrateSessionFields();
