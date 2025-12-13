@@ -16,6 +16,11 @@ python3 -m http.server 5173
 # then open http://localhost:5173
 ```
 
+## Mobile prototype (React)
+A mobile-first React prototype UI lives at `mobile/`:
+
+- `http://localhost:5173/mobile/`
+
 **Important:** Your Spotify app’s Redirect URI must exactly match what you use in the UI. Default is `http://localhost:5173/callback.html` locally or `https://<username>.github.io/radio-show/callback.html` on GitHub Pages. Register the exact URI in the Spotify dashboard.
 
 GitHub Pages example (free HTTPS):
