@@ -564,6 +564,11 @@
       meta.appendChild(subtitle);
       const actions = document.createElement("div");
       actions.className = "actions";
+      const addBtn = document.createElement("button");
+      addBtn.textContent = "Add";
+      addBtn.className = "primary";
+      addBtn.addEventListener("click", () => addSoundcloudToShow(track, addBtn));
+      actions.appendChild(addBtn);
       const play = document.createElement("button");
       const isPlaying = state.soundcloud.playingId === track.id;
       play.textContent = isPlaying ? "Pause" : "Play";
@@ -643,6 +648,63 @@
     const progressive = list.find((t) => t.format?.protocol === "progressive");
     if (progressive) return progressive;
     return list.find((t) => t.format?.protocol === "hls") || null;
+  }
+
+  async function addSoundcloudToShow(track, button) {
+    const clientId = getSoundcloudClientId();
+    if (!clientId) {
+      alert("Add your SoundCloud client ID in Auth Panel.");
+      return;
+    }
+    const btn = button || null;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Adding…";
+    }
+    try {
+      const streamUrl = await resolveSoundcloudStream(track, clientId);
+      if (!streamUrl) throw new Error("No playable stream for this track.");
+      const duration = Number(track.duration || track.full_duration || 0);
+      const artRaw = track.artwork_url || track.user?.avatar_url || "";
+      const artwork = artRaw ? artRaw.replace("-large", "-t500x500") : "";
+      const transcoding = pickSoundcloudTranscoding(track.media?.transcodings || []);
+      const segment = {
+        id: uid(),
+        type: "soundcloud",
+        title: track.title || "Untitled",
+        subtitle: track.user?.username ? `by ${track.user.username}` : "SoundCloud",
+        duration: duration > 0 ? duration : 1000,
+        startMs: 0,
+        endMs: duration > 0 ? duration : 1000,
+        bpm: null,
+        key: null,
+        energy: null,
+        album: artwork ? { images: [{ url: artwork }] } : null,
+        note: track.permalink_url || "",
+        uri: track.permalink_url || `soundcloud:${track.id || ""}`,
+        fadeIn: false,
+        fadeOut: false,
+        volume: state.masterVolume,
+        cueMs: 0,
+        overlays: [],
+        streamUrl,
+        url: streamUrl,
+        clientId,
+        soundcloudId: track.id,
+        soundcloudPermalink: track.permalink_url || "",
+        transcodingUrl: transcoding?.url || "",
+      };
+      state.segments.push(segment);
+      renderSegments();
+    } catch (err) {
+      console.warn("Add SoundCloud failed", err);
+      alert(err?.message ? `Could not add SoundCloud track: ${err.message}` : "Could not add SoundCloud track.");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Add";
+      }
+    }
   }
 
   function initMusicKit() {
@@ -1919,6 +1981,9 @@
         if (segment.bpm) metaBits.push(`${Math.round(segment.bpm)} BPM`);
         if (segment.key) metaBits.push(segment.key);
         if (segment.energy) metaBits.push(`Energy ${segment.energy}`);
+      } else if (segment.type === "soundcloud") {
+        metaBits.push("SoundCloud");
+        metaBits.push(segment.subtitle || "");
       } else if (segment.type === "upload") {
         metaBits.push("Upload");
         metaBits.push(segment.subtitle || "");
@@ -2364,10 +2429,18 @@
     resetListenProgress();
   }
 
+  function describeSegmentSource(segment) {
+    if (!segment) return "—";
+    if (segment.type === "spotify") return "Spotify";
+    if (segment.type === "upload") return "Upload";
+    if (segment.type === "soundcloud") return "SoundCloud";
+    return "Voice";
+  }
+
   function updateListenNow(segment) {
     if (!dom.listenTitle) return;
     dom.listenTitle.textContent = segment?.title || "—";
-    dom.listenSubtitle.textContent = `${segment?.type === "spotify" ? "Spotify" : "Voice"} · ${segment?.subtitle || ""}`;
+    dom.listenSubtitle.textContent = `${describeSegmentSource(segment)} · ${segment?.subtitle || ""}`;
     dom.listenNote.textContent = segment?.note || "";
     if (segment?.album?.images?.[0]) {
       dom.listenCover.style.backgroundImage = `url(${segment.album.images[0].url})`;
@@ -2428,8 +2501,9 @@
     stopPreview();
     state.previewSegmentId = segment.id;
     const length = getSegmentLength(segment);
-    if (segment.type === "voice") {
+    if (segment.type === "voice" || segment.type === "upload" || segment.type === "soundcloud") {
       const audio = new Audio(segment.url);
+      audio.crossOrigin = "anonymous";
       audio.currentTime = (startOverrideMs ?? segment.startMs ?? 0) / 1000;
       audio.volume = segment.volume ?? state.masterVolume;
       state.previewAudio = audio;
@@ -2468,7 +2542,7 @@
     const totalLength = getSegmentLength(segment);
     const playLength = Math.max(0, totalLength - offsetMs);
     startListenProgress(playLength);
-    if (segment.type === "voice" || segment.type === "upload") {
+    if (segment.type === "voice" || segment.type === "upload" || segment.type === "soundcloud") {
       await playVoiceSegment(segment, offsetMs, playLength);
     } else {
       await playSpotifySegment(segment, offsetMs, playLength);
@@ -2480,7 +2554,13 @@
   async function playVoiceSegment(segment, offsetMs = 0, playMsOverride) {
     const ctx = getAudioContext();
     await ctx.resume();
-    const audio = new Audio(segment.url);
+    const audioUrl = segment.url || segment.streamUrl;
+    if (!audioUrl) {
+      console.warn("No audio URL for segment", segment);
+      return;
+    }
+    const audio = new Audio(audioUrl);
+    audio.crossOrigin = "anonymous";
     const source = ctx.createMediaElementSource(audio);
     const gain = ctx.createGain();
     const vol = segment.volume ?? state.masterVolume;
