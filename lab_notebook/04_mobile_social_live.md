@@ -1,0 +1,57 @@
+# Progress Update — Mobile Social + Live Scaffolding
+
+Date: 2025-12-14 (started ~6:54pm ET)
+
+## What shipped (capabilities, not polish)
+
+### Mobile (React prototype)
+- Supabase config + email-link auth scaffold in Profile.
+- Profile settings: handle + zip + location opt-in (stored locally + synced to Supabase).
+- Sessions feed modes: New / Top / Near (zip) / Following / Inbox / Live.
+- Follow/unfollow from Sessions; “friends” = mutual follow (enforced server-side for visibility rules).
+- Presence badges (green “active”) based on `profile_presence.last_seen_at` (followers/friends only).
+- Inbox: view incoming shares; load into Builder.
+- Load session JSON via `get_session` → map show segments into the Builder queue.
+- Live: list live sessions + “Join” = placeholder (copies room code); “Go Live / End” buttons scaffolded in Profile.
+
+### Web app (index.html + app.js)
+- Connect panel: profile handle + zip + location opt-in + follow-by-handle.
+- Show Builder: session visibility (public/unlisted/followers/friends) + per-session zip + “Nearby” opt-in.
+- Sessions panel: feed selector (Public / Following / Nearby / Inbox / Live).
+- Following feed (direct table query w/ RLS), Nearby feed (via `list_sessions` zip filter), Inbox list w/ Load + Mark Read.
+- Follow/unfollow + “Send” (creates `inbox_items`) on each session row.
+- Presence badges on session rows when visible.
+- Live: `Go Live` / `End Live` buttons + Live list + Join placeholder.
+
+## Backend scaffolding (Supabase)
+
+### Schema + migration
+- Added `supabase/migrations/20251214190000_social_live_location.sql`.
+- Added new tables:
+  - `follows` (follower graph; friends = mutual follow)
+  - `profile_locations` (zip + opt-in; private by default)
+  - `profile_presence` (last-seen + status; visible to self + followers/friends)
+  - `session_locations` (zip + opt-in; public only if opted-in)
+  - `inbox_items` (direct session shares)
+  - `live_sessions` + `live_events` (live discovery + events)
+- Updated sessions read policy to support `public`/`unlisted` plus gated `followers`/`friends`.
+
+### Edge Functions
+- Updated:
+  - `create_session`: clamps visibility + writes `session_locations` when zip present.
+  - `list_sessions`: supports `{ zip }` filter + returns `zip` only if opted-in.
+  - `get_session`: supports visibility rules + inbox override; now uses auth headers when available.
+- Added:
+  - `start_live`, `end_live`, `list_live` (voice streaming remains a placeholder).
+
+## Placeholders / TODOs (tracked)
+
+- TODO-LIVE-STREAM-1: Implement real voice streaming (recommended: SFU provider like LiveKit/Agora; Edge Functions mint join tokens).
+- TODO-LIVE-SYNC-1: Define live “show events” (`live_events`) for now-playing, chat, reactions; wire realtime subscriptions.
+- TODO-NEARBY-1: Zip → lat/lng + radius search; decide privacy model (coarse geohash, city-level, etc).
+- TODO-PRESENCE-1: Replace heartbeat table writes with Supabase Realtime Presence where possible; keep RLS gating.
+- TODO-INBOX-1: Add threads + per-message metadata (session title/cover snapshot) + archive/delete; realtime notifications UX.
+- TODO-FOLLOW-1: Profile pages, follower counts, mutual “friend” UI, blocking/reporting primitives.
+- TODO-SECURITY-1: Tighten Edge Function auth + rate limits; audit all service-role usage; validate inputs more strictly.
+- TODO-WEB-LISTENER-1: Port Inbox/Following/Nearby/Live discovery into `listener.html` too (keeps “web app” parity).
+
