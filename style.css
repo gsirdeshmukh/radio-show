@@ -691,6 +691,12 @@ button:hover:not(:disabled) {
   padding: 8px 10px;
 }
 
+.people-results {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .segments li {
   grid-template-columns: 1fr auto auto;
 }

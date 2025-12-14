@@ -1516,6 +1516,8 @@
     setAccent,
     services,
     toast,
+    supabase,
+    supabaseSession,
     supabaseUrl,
     setSupabaseUrl,
     supabaseAnon,
@@ -1536,6 +1538,108 @@
     onGoLive,
     onEndLive,
   }) {
+    const userId = supabaseSession?.user?.id || "";
+    const [peopleQ, setPeopleQ] = useState("");
+    const [people, setPeople] = useState([]);
+    const [following, setFollowing] = useState(() => new Set());
+    const [followers, setFollowers] = useState(() => new Set());
+    const [peoplePresence, setPeoplePresence] = useState(() => new Map());
+
+    const isActive = (p) => {
+      const last = Date.parse(p?.last_seen_at || "");
+      return Number.isFinite(last) && Date.now() - last < 70_000;
+    };
+
+    useEffect(() => {
+      if (!supabase || !userId) {
+        setFollowing(new Set());
+        setFollowers(new Set());
+        return;
+      }
+      (async () => {
+        try {
+          const [{ data: fwd }, { data: rev }] = await Promise.all([
+            supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000),
+            supabase.from("follows").select("follower_id").eq("followed_id", userId).limit(5000),
+          ]);
+          setFollowing(new Set((fwd || []).map((r) => r.followed_id).filter(Boolean)));
+          setFollowers(new Set((rev || []).map((r) => r.follower_id).filter(Boolean)));
+        } catch {
+          // ignore
+        }
+      })();
+    }, [supabase, userId]);
+
+    useEffect(() => {
+      let ignore = false;
+      const q = String(peopleQ || "").trim().toLowerCase();
+      if (!supabase) {
+        setPeople([]);
+        setPeoplePresence(new Map());
+        return;
+      }
+      if (!q || q.length < 2) {
+        setPeople([]);
+        setPeoplePresence(new Map());
+        return;
+      }
+      const qSafe = q.replace(/[^a-z0-9_ ]+/g, " ").replace(/\s+/g, " ").slice(0, 32);
+      (async () => {
+        try {
+          const pattern = `%${qSafe}%`;
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("user_id, handle, display_name")
+            .or(`handle.ilike.${pattern},display_name.ilike.${pattern}`)
+            .limit(12);
+          if (ignore) return;
+          if (error) throw error;
+          const rows = (data || []).filter((r) => r?.user_id && r.user_id !== userId);
+          setPeople(rows);
+          const ids = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+          if (!ids.length) {
+            setPeoplePresence(new Map());
+            return;
+          }
+          try {
+            const { data: presence } = await supabase.from("profile_presence").select("user_id, last_seen_at, status").in("user_id", ids);
+            if (ignore) return;
+            setPeoplePresence(new Map((presence || []).map((p) => [p.user_id, p])));
+          } catch {
+            if (!ignore) setPeoplePresence(new Map());
+          }
+        } catch {
+          if (!ignore) {
+            setPeople([]);
+            setPeoplePresence(new Map());
+          }
+        }
+      })();
+      return () => {
+        ignore = true;
+      };
+    }, [supabase, userId, peopleQ]);
+
+    const toggleFollow = async (targetUserId) => {
+      if (!supabase || !userId) return toast("Sign in to follow");
+      if (!targetUserId || targetUserId === userId) return;
+      const next = new Set(Array.from(following));
+      try {
+        if (next.has(targetUserId)) {
+          const { error } = await supabase.from("follows").delete().eq("follower_id", userId).eq("followed_id", targetUserId);
+          if (error) throw error;
+          next.delete(targetUserId);
+        } else {
+          const { error } = await supabase.from("follows").insert({ follower_id: userId, followed_id: targetUserId });
+          if (error) throw error;
+          next.add(targetUserId);
+        }
+        setFollowing(next);
+      } catch {
+        toast("Follow failed");
+      }
+    };
+
     return html`<div className="fade-in">
       <div className="section" style=${{ marginTop: 0 }}>
         <div className="card">
@@ -1580,11 +1684,11 @@
         </div>
       </div>
 
-      <div className="section">
-        <div className="section-head">
-          <div className="section-title">Discovery</div>
-          <div className="section-note">zip + opt-in</div>
-        </div>
+	      <div className="section">
+	        <div className="section-head">
+	          <div className="section-title">Discovery</div>
+	          <div className="section-note">zip + opt-in</div>
+	        </div>
         <div className="card">
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
             <div className="field">
@@ -1604,11 +1708,60 @@
             <button className="pill primary" onClick=${onSaveProfile} type="button">Save Profile</button>
           </div>
         </div>
-      </div>
+	      </div>
 
 	      <div className="section">
 	        <div className="section-head">
-	          <div className="section-title">Live</div>
+	          <div className="section-title">People</div>
+	          <div className="section-note">follow + active</div>
+	        </div>
+	        <div className="card">
+	          <div className="field">
+	            <${Icon} name="search" />
+	            <input value=${peopleQ} onChange=${(e) => setPeopleQ(e.target.value)} placeholder="Search handles or names…" />
+	          </div>
+	          <div style=${{ height: "12px" }}></div>
+	          <div className="list">
+	            ${(people || []).map((p) => {
+	              const handle = p?.handle ? `@${p.handle}` : p?.display_name || p?.user_id?.slice(0, 8) || "user";
+	              const sub = p?.display_name && p?.handle ? p.display_name : p?.handle ? "" : p?.user_id ? p.user_id.slice(0, 8) : "";
+	              const active = p?.user_id ? isActive(peoplePresence.get(p.user_id)) : false;
+	              const followed = !!(p?.user_id && following.has(p.user_id));
+	              const friend = followed && !!(p?.user_id && followers.has(p.user_id));
+	              const label = !followed ? "Follow" : friend ? "Friend ✓" : "Following";
+	              const canFollow = !!(p?.user_id && userId);
+	              return html`<div className="item">
+	                <div className="thumb"></div>
+	                <div className="grow meta">
+	                  <div className="t">${handle}</div>
+	                  <div className="s">
+	                    ${sub}
+	                    ${active &&
+	                    html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+	                      <span className="presence-dot"></span><span className="presence-label">active</span>
+	                    </span>`}
+	                  </div>
+	                </div>
+	                <button className=${cx("pill", followed ? "ghost" : "primary")} disabled=${!canFollow} onClick=${() => toggleFollow(p.user_id)} type="button">
+	                  ${canFollow ? label : "Sign in"}
+	                </button>
+	              </div>`;
+	            })}
+	            ${(!peopleQ || String(peopleQ).trim().length < 2) &&
+	            html`<div className="card">
+	              <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>Search 2+ characters to find handles.</div>
+	            </div>`}
+	            ${(peopleQ && String(peopleQ).trim().length >= 2 && (!people || !people.length)) &&
+	            html`<div className="card">
+	              <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>No matches.</div>
+	            </div>`}
+	          </div>
+	        </div>
+	      </div>
+
+		      <div className="section">
+		        <div className="section-head">
+		          <div className="section-title">Live</div>
 	          <div className="section-note">voice (beta)</div>
 	        </div>
 	        <div className="card">
@@ -1735,26 +1888,47 @@
       };
     }, [supabase, supabaseSession?.user?.id]);
 
-    useEffect(() => {
-      if (!supabase || !supabaseSession?.user?.id) return;
-      const uid = supabaseSession.user.id;
-      let timer = null;
-      const upsert = async (offline) => {
-        try {
-          await supabase.from("profile_presence").upsert({
-            user_id: uid,
-            last_seen_at: new Date().toISOString(),
-            status: offline ? "offline" : "online",
-          });
-        } catch {}
-      };
-      upsert(false);
-      timer = window.setInterval(() => upsert(false), 30_000);
-      return () => {
-        if (timer) window.clearInterval(timer);
-        upsert(true);
-      };
-    }, [supabase, supabaseSession?.user?.id]);
+	    useEffect(() => {
+	      if (!supabase || !supabaseSession?.user?.id) return;
+	      const uid = supabaseSession.user.id;
+	      let timer = null;
+	      let cancelled = false;
+	      const upsert = async (offline) => {
+	        if (cancelled) return;
+	        try {
+	          await supabase.from("profile_presence").upsert({
+	            user_id: uid,
+	            last_seen_at: new Date().toISOString(),
+	            status: offline ? "offline" : "online",
+	          });
+	        } catch {}
+	      };
+	      const start = () => {
+	        if (timer) return;
+	        upsert(false);
+	        timer = window.setInterval(() => upsert(false), 30_000);
+	      };
+	      const stop = (offline) => {
+	        if (timer) window.clearInterval(timer);
+	        timer = null;
+	        if (offline) upsert(true);
+	      };
+	      const onVis = () => {
+	        if (document.hidden) stop(true);
+	        else start();
+	      };
+	      const onHide = () => stop(true);
+	      document.addEventListener("visibilitychange", onVis);
+	      window.addEventListener("pagehide", onHide);
+	      if (document.hidden) stop(true);
+	      else start();
+	      return () => {
+	        stop(true);
+	        cancelled = true;
+	        document.removeEventListener("visibilitychange", onVis);
+	        window.removeEventListener("pagehide", onHide);
+	      };
+	    }, [supabase, supabaseSession?.user?.id]);
 
     const authedEmail = supabaseSession?.user?.email || "";
     const authedUserId = supabaseSession?.user?.id || "";
@@ -2034,22 +2208,24 @@
 	            onLoad=${onLoadSession}
 	            toast=${show}
           />`
-        : html`<${ProfileScreen}
-            theme=${theme}
-            setTheme=${(t) => {
-              setTheme(t);
-              show(`Theme: ${t}`);
-            }}
-            accent=${accent}
-            setAccent=${(a) => {
-              setAccent(a);
-              show("Accent updated");
-            }}
-            services=${services}
-            toast=${show}
-            supabaseUrl=${supabaseUrl}
-            setSupabaseUrl=${setSupabaseUrl}
-            supabaseAnon=${supabaseAnon}
+	        : html`<${ProfileScreen}
+	            theme=${theme}
+	            setTheme=${(t) => {
+	              setTheme(t);
+	              show(`Theme: ${t}`);
+	            }}
+	            accent=${accent}
+	            setAccent=${(a) => {
+	              setAccent(a);
+	              show("Accent updated");
+	            }}
+	            services=${services}
+	            toast=${show}
+	            supabase=${supabase}
+	            supabaseSession=${supabaseSession}
+	            supabaseUrl=${supabaseUrl}
+	            setSupabaseUrl=${setSupabaseUrl}
+	            supabaseAnon=${supabaseAnon}
             setSupabaseAnon=${setSupabaseAnon}
             authedEmail=${authedEmail}
             supabaseEmail=${supabaseEmail}

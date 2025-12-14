@@ -41,14 +41,19 @@
 			    supabaseAuthed: false,
 			    following: new Set(),
 			    followers: new Set(),
+			    peopleQuery: "",
+			    peopleResults: [],
+			    peoplePresence: new Map(),
+			    peopleSearchTimer: null,
 			    presence: new Map(),
 			    presenceTimer: null,
-		    inbox: [],
-		    inboxLoading: false,
-		    inboxChannel: null,
-		    live: [],
-		    liveLoading: false,
-		    currentLive: null,
+			    inbox: [],
+			    inboxLoading: false,
+			    inboxChannel: null,
+			    inboxUnreadCount: 0,
+			    live: [],
+			    liveLoading: false,
+			    currentLive: null,
 		    liveRoom: null,
 		    liveRoomEvents: [],
 		    liveRoomProfiles: new Map(),
@@ -71,11 +76,21 @@
     bindEvents();
     const storedToken = sessionStorage.getItem("rs_token");
     if (storedToken) dom.tokenInput.value = storedToken;
-    hydrateLikedSessions();
-    hydrateSupabaseConfig();
-    hydrateProfileSettingsFromLocal();
-    loadSupabaseSessions();
-  });
+	    hydrateLikedSessions();
+	    hydrateSupabaseConfig();
+	    hydrateProfileSettingsFromLocal();
+	    renderPeopleResults();
+	    loadSupabaseSessions();
+
+	    document.addEventListener("visibilitychange", () => {
+	      if (document.hidden) {
+	        stopPresenceHeartbeat();
+	      } else if (state.supabaseAuthed) {
+	        startPresenceHeartbeat();
+	      }
+	    });
+	    window.addEventListener("pagehide", () => stopPresenceHeartbeat());
+	  });
 
   function assignDom() {
     dom.tokenInput = document.getElementById("token-input");
@@ -104,11 +119,14 @@
     dom.supabaseAuthStatus = document.getElementById("supabase-auth-status");
     dom.profileHandleInput = document.getElementById("profile-handle");
     dom.profileZipInput = document.getElementById("profile-zip");
-    dom.profileLocationOptIn = document.getElementById("profile-location-optin");
-    dom.profileSaveBtn = document.getElementById("profile-save-btn");
-    dom.followHandleInput = document.getElementById("follow-handle");
-    dom.followBtn = document.getElementById("follow-btn");
-    dom.sessionsPanel = document.getElementById("sessions-panel");
+	    dom.profileLocationOptIn = document.getElementById("profile-location-optin");
+	    dom.profileSaveBtn = document.getElementById("profile-save-btn");
+	    dom.followHandleInput = document.getElementById("follow-handle");
+	    dom.followBtn = document.getElementById("follow-btn");
+	    dom.peopleSearchInput = document.getElementById("people-search");
+	    dom.peopleClearBtn = document.getElementById("people-clear");
+	    dom.peopleResults = document.getElementById("people-results");
+	    dom.sessionsPanel = document.getElementById("sessions-panel");
     dom.sessionsList = document.getElementById("sessions-list");
     dom.sessionsSearch = document.getElementById("sessions-search");
     dom.sessionsFeed = document.getElementById("sessions-feed");
@@ -469,13 +487,28 @@
 	          sendLiveRoomChat();
 	        }
 	      });
-	    }
-	    dom.profileSaveBtn && dom.profileSaveBtn.addEventListener("click", saveProfileSettings);
-	    dom.followBtn && dom.followBtn.addEventListener("click", followByHandle);
-	    dom.barPlay.addEventListener("click", playShow);
-	    dom.barStop.addEventListener("click", stopShow);
-	    dom.barProgress.addEventListener("click", handleSeek);
-	  }
+		    }
+		    dom.profileSaveBtn && dom.profileSaveBtn.addEventListener("click", saveProfileSettings);
+		    dom.followBtn && dom.followBtn.addEventListener("click", followByHandle);
+		    if (dom.peopleSearchInput) {
+		      dom.peopleSearchInput.addEventListener("input", () => {
+		        state.peopleQuery = String(dom.peopleSearchInput.value || "").trim();
+		        schedulePeopleSearch();
+		      });
+		    }
+		    if (dom.peopleClearBtn) {
+		      dom.peopleClearBtn.addEventListener("click", () => {
+		        state.peopleQuery = "";
+		        if (dom.peopleSearchInput) dom.peopleSearchInput.value = "";
+		        state.peopleResults = [];
+		        state.peoplePresence = new Map();
+		        renderPeopleResults();
+		      });
+		    }
+		    dom.barPlay.addEventListener("click", playShow);
+		    dom.barStop.addEventListener("click", stopShow);
+		    dom.barProgress.addEventListener("click", handleSeek);
+		  }
 
 	  async function supabaseSignIn() {
 	    const client = initSupabaseClient();
@@ -521,6 +554,7 @@
 			      state.followers = new Set();
 			      state.presence = new Map();
 		      state.inbox = [];
+		      state.inboxUnreadCount = 0;
 		      updateInboxFeedLabel();
 		      state.live = [];
 		      state.currentLive = null;
@@ -532,6 +566,7 @@
 		    await loadFollowers();
 		    startPresenceHeartbeat();
 		    subscribeInbox();
+		    refreshInboxUnreadCount().catch(() => {});
 		    loadSupabaseSessions().catch(() => {});
 		  }
 
@@ -694,20 +729,181 @@
 	    state.following.add(targetUserId);
 	  }
 
-	  async function unfollowUserId(targetUserId) {
-	    const client = initSupabaseClient();
-	    const uid = state.supabaseSession?.user?.id || "";
-	    if (!client || !uid || !targetUserId) return;
-	    const { error } = await client.from("follows").delete().eq("follower_id", uid).eq("followed_id", targetUserId);
-	    if (error) throw error;
-	    state.following.delete(targetUserId);
-	  }
+		  async function unfollowUserId(targetUserId) {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid || !targetUserId) return;
+		    const { error } = await client.from("follows").delete().eq("follower_id", uid).eq("followed_id", targetUserId);
+		    if (error) throw error;
+		    state.following.delete(targetUserId);
+		  }
 
-	  async function sendSessionToHandle(sessionId) {
-	    const client = initSupabaseClient();
-	    const uid = state.supabaseSession?.user?.id || "";
-	    if (!client || !uid) {
-	      alert("Sign in with Supabase to send.");
+		  function normalizePeopleQuery(raw) {
+		    return String(raw || "")
+		      .trim()
+		      .toLowerCase()
+		      .replace(/[^a-z0-9_ ]+/g, " ")
+		      .replace(/\s+/g, " ")
+		      .slice(0, 32);
+		  }
+
+		  function schedulePeopleSearch() {
+		    clearTimeout(state.peopleSearchTimer);
+		    state.peopleSearchTimer = setTimeout(() => searchPeople().catch(() => {}), 220);
+		  }
+
+		  async function searchPeople() {
+		    const client = initSupabaseClient();
+		    if (!client) {
+		      state.peopleResults = [];
+		      state.peoplePresence = new Map();
+		      renderPeopleResults();
+		      return;
+		    }
+		    const q = normalizePeopleQuery(state.peopleQuery);
+		    if (q.length < 2) {
+		      state.peopleResults = [];
+		      state.peoplePresence = new Map();
+		      renderPeopleResults();
+		      return;
+		    }
+		    try {
+		      const pattern = `%${q}%`;
+		      const { data, error } = await client
+		        .from("profiles")
+		        .select("user_id, handle, display_name")
+		        .or(`handle.ilike.${pattern},display_name.ilike.${pattern}`)
+		        .limit(12);
+		      if (error) throw error;
+		      const rows = (data || []).filter((r) => r?.user_id);
+		      state.peopleResults = rows;
+
+		      const ids = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+		      state.peoplePresence = new Map();
+		      if (ids.length) {
+		        try {
+		          const { data: presence } = await client
+		            .from("profile_presence")
+		            .select("user_id, last_seen_at, status")
+		            .in("user_id", ids);
+		          state.peoplePresence = new Map((presence || []).map((p) => [p.user_id, p]));
+		        } catch {
+		          state.peoplePresence = new Map();
+		        }
+		      }
+		    } catch (err) {
+		      console.warn("searchPeople failed", err);
+		      state.peopleResults = [];
+		      state.peoplePresence = new Map();
+		    }
+		    renderPeopleResults();
+		  }
+
+		  function renderPeopleResults() {
+		    if (!dom.peopleResults) return;
+		    dom.peopleResults.innerHTML = "";
+		    const q = normalizePeopleQuery(state.peopleQuery);
+		    const rows = Array.isArray(state.peopleResults) ? state.peopleResults : [];
+		    const uid = state.supabaseSession?.user?.id || "";
+
+		    if (q.length < 2) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = "Search people";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = "Type 2+ characters to find handles.";
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      li.appendChild(meta);
+		      dom.peopleResults.appendChild(li);
+		      return;
+		    }
+
+		    if (!rows.length) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = "No matches";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = `No profiles found for "${q}".`;
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      li.appendChild(meta);
+		      dom.peopleResults.appendChild(li);
+		      return;
+		    }
+
+		    rows.forEach((p) => {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      const handle = p?.handle ? `@${p.handle}` : p?.display_name || p?.user_id?.slice(0, 8) || "user";
+		      title.textContent = handle;
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = p?.display_name ? p.display_name : p?.handle ? "" : p?.user_id ? p.user_id.slice(0, 8) : "";
+		      const presence = p?.user_id ? state.peoplePresence.get(p.user_id) : null;
+		      if (presence && isPresenceActive(presence)) {
+		        const badge = document.createElement("span");
+		        badge.className = "presence";
+		        const dot = document.createElement("span");
+		        dot.className = "presence-dot";
+		        const label = document.createElement("span");
+		        label.className = "presence-label";
+		        label.textContent = "active";
+		        badge.appendChild(dot);
+		        badge.appendChild(label);
+		        sub.appendChild(document.createTextNode(" "));
+		        sub.appendChild(badge);
+		      }
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      const actions = document.createElement("div");
+		      actions.className = "actions";
+
+		      if (p?.user_id && uid && p.user_id !== uid) {
+		        const followBtn = document.createElement("button");
+		        followBtn.type = "button";
+		        followBtn.textContent = followButtonLabel(p.user_id);
+		        followBtn.addEventListener("click", async () => {
+		          try {
+		            if (state.following.has(p.user_id)) await unfollowUserId(p.user_id);
+		            else await followUserId(p.user_id);
+		            followBtn.textContent = followButtonLabel(p.user_id);
+		          } catch (err) {
+		            alert(`Follow failed: ${err?.message || "unknown error"}`);
+		          }
+		        });
+		        actions.appendChild(followBtn);
+		      } else if (p?.user_id && !uid) {
+		        const followBtn = document.createElement("button");
+		        followBtn.type = "button";
+		        followBtn.textContent = "Follow";
+		        followBtn.disabled = true;
+		        followBtn.title = "Sign in with Supabase to follow.";
+		        actions.appendChild(followBtn);
+		      }
+
+		      li.appendChild(meta);
+		      li.appendChild(actions);
+		      dom.peopleResults.appendChild(li);
+		    });
+		  }
+
+		  async function sendSessionToHandle(sessionId) {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) {
+		      alert("Sign in with Supabase to send.");
 	      return;
 	    }
 	    const raw = prompt("Send to handle (e.g. @someone):") || "";
@@ -815,7 +1011,14 @@
 	    try {
 	      state.inboxChannel = client
 	        .channel("rs-inbox")
-	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${uid}` }, () => {
+	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${uid}` }, (payload) => {
+	          const row = payload?.new || null;
+	          if (row?.status === "unread") {
+	            state.inboxUnreadCount = Math.max(0, Number(state.inboxUnreadCount) || 0) + 1;
+	            updateInboxFeedLabel();
+	          } else {
+	            refreshInboxUnreadCount().catch(() => {});
+	          }
 	          if (state.sessionsFeed === "inbox") loadSupabaseSessions();
 	        })
 	        .subscribe();
@@ -834,8 +1037,31 @@
 	    if (!dom.sessionsFeed) return;
 	    const opt = dom.sessionsFeed.querySelector('option[value="inbox"]');
 	    if (!opt) return;
-	    const unread = (state.inbox || []).filter((x) => x.status === "unread").length;
+	    const unread = Math.max(0, Number(state.inboxUnreadCount) || 0);
 	    opt.textContent = unread ? `Inbox (${unread})` : "Inbox";
+	  }
+
+	  async function refreshInboxUnreadCount() {
+	    const client = initSupabaseClient();
+	    const uid = state.supabaseSession?.user?.id || "";
+	    if (!client || !uid) {
+	      state.inboxUnreadCount = 0;
+	      updateInboxFeedLabel();
+	      return;
+	    }
+	    try {
+	      const { count, error } = await client
+	        .from("inbox_items")
+	        .select("id", { count: "exact", head: true })
+	        .eq("to_user_id", uid)
+	        .eq("status", "unread");
+	      if (error) throw error;
+	      state.inboxUnreadCount = count || 0;
+	    } catch (err) {
+	      console.warn("refreshInboxUnreadCount failed", err);
+	      state.inboxUnreadCount = (state.inbox || []).filter((x) => x.status === "unread").length;
+	    }
+	    updateInboxFeedLabel();
 	  }
 
 		  async function loadSupabaseSessions() {
@@ -979,6 +1205,7 @@
 	    const uid = state.supabaseSession?.user?.id || "";
 	    if (!client || !uid) {
 	      state.inbox = [];
+	      state.inboxUnreadCount = 0;
 	      renderSupabaseInbox();
 	      updateInboxFeedLabel();
 	      setSessionsStatus("Sign in to view Inbox");
@@ -1002,13 +1229,15 @@
 	        (senders || []).forEach((p) => senderById.set(p.user_id, p));
 	      }
 	      state.inbox = rows.map((r) => ({ ...r, from: senderById.get(r.from_user_id) || null }));
+	      const unread = state.inbox.filter((x) => x.status === "unread").length;
+	      state.inboxUnreadCount = unread;
 	      renderSupabaseInbox();
 	      updateInboxFeedLabel();
-	      const unread = state.inbox.filter((x) => x.status === "unread").length;
 	      setSessionsStatus(`${state.inbox.length} inbox items${unread ? ` · ${unread} unread` : ""}`);
 	    } catch (err) {
 	      console.warn("inbox load failed", err);
 	      state.inbox = [];
+	      state.inboxUnreadCount = 0;
 	      renderSupabaseInbox();
 	      updateInboxFeedLabel();
 	      setSessionsStatus("Failed to load Inbox");
@@ -1024,16 +1253,17 @@
 	    try {
 	      await client.from("inbox_items").update({ status: "read", read_at: new Date().toISOString() }).eq("id", itemId).eq("to_user_id", uid);
 	      const row = (state.inbox || []).find((x) => x.id === itemId);
-	      if (row) {
-	        row.status = "read";
-	        row.read_at = new Date().toISOString();
-	      }
-	      renderSupabaseInbox();
-	      updateInboxFeedLabel();
-	    } catch (err) {
-	      console.warn("markInboxRead failed", err);
-	    }
-	  }
+		      if (row) {
+		        row.status = "read";
+		        row.read_at = new Date().toISOString();
+		      }
+		      renderSupabaseInbox();
+		      state.inboxUnreadCount = (state.inbox || []).filter((x) => x.status === "unread").length;
+		      updateInboxFeedLabel();
+		    } catch (err) {
+		      console.warn("markInboxRead failed", err);
+		    }
+		  }
 
 		  async function loadSupabaseLive({ near } = { near: false }) {
 		    const client = initSupabaseClient();
