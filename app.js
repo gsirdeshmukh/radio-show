@@ -70,12 +70,13 @@
 		    sessionsFeed: "public",
 		    sessionsLoading: false,
 		    sessionsSearchTimer: null,
-		    sessionsStatsChannel: null,
-		    supabaseAuthed: false,
-		    following: new Set(),
-		    presence: new Map(),
-		    presenceTimer: null,
-		    inbox: [],
+			    sessionsStatsChannel: null,
+			    supabaseAuthed: false,
+			    following: new Set(),
+			    followers: new Set(),
+			    presence: new Map(),
+			    presenceTimer: null,
+			    inbox: [],
 		    inboxLoading: false,
 		    inboxChannel: null,
 			    live: [],
@@ -1106,22 +1107,25 @@
 			    return token ? { Authorization: `Bearer ${token}` } : {};
 			  }
 
-				  async function handleSupabaseAuthedState(authed) {
-				    if (!authed) {
-				      closeLiveRoom();
-				      stopPresenceHeartbeat();
-				      unsubscribeInbox();
-				      state.following = new Set();
-				      state.presence = new Map();
-				      state.inbox = [];
-			      return;
-			    }
-			    await ensureOwnProfileSettings();
-			    await loadFollowing();
-			    startPresenceHeartbeat();
-			    subscribeInbox();
-			    loadSupabaseSessions();
-			  }
+					  async function handleSupabaseAuthedState(authed) {
+					    if (!authed) {
+					      closeLiveRoom();
+					      stopPresenceHeartbeat();
+					      unsubscribeInbox();
+					      state.following = new Set();
+					      state.followers = new Set();
+					      state.presence = new Map();
+					      state.inbox = [];
+					      updateInboxFeedLabel();
+				      return;
+				    }
+				    await ensureOwnProfileSettings();
+				    await loadFollowing();
+				    await loadFollowers();
+				    startPresenceHeartbeat();
+				    subscribeInbox();
+				    loadSupabaseSessions();
+				  }
 
 			  function normalizeHandle(raw) {
 			    return String(raw || "")
@@ -1211,26 +1215,51 @@
 			    }
 			  }
 
-			  async function loadFollowing() {
-			    const client = initSupabaseClient();
-			    const uid = state.supabaseSession?.user?.id || "";
-			    if (!client || !uid) {
-			      state.following = new Set();
-			      return;
-			    }
-			    try {
-			      const { data, error } = await client.from("follows").select("followed_id").eq("follower_id", uid).limit(5000);
-			      if (error) throw error;
-			      state.following = new Set((data || []).map((r) => r.followed_id).filter(Boolean));
-			    } catch (err) {
-			      console.warn("loadFollowing failed", err);
-			      state.following = new Set();
-			    }
-			  }
+				  async function loadFollowing() {
+				    const client = initSupabaseClient();
+				    const uid = state.supabaseSession?.user?.id || "";
+				    if (!client || !uid) {
+				      state.following = new Set();
+				      return;
+				    }
+				    try {
+				      const { data, error } = await client.from("follows").select("followed_id").eq("follower_id", uid).limit(5000);
+				      if (error) throw error;
+				      state.following = new Set((data || []).map((r) => r.followed_id).filter(Boolean));
+				    } catch (err) {
+				      console.warn("loadFollowing failed", err);
+				      state.following = new Set();
+				    }
+				  }
 
-			  async function followByHandle() {
-			    const raw = String(dom.followHandleInput?.value || "").trim();
-			    const handle = normalizeHandle(raw);
+				  async function loadFollowers() {
+				    const client = initSupabaseClient();
+				    const uid = state.supabaseSession?.user?.id || "";
+				    if (!client || !uid) {
+				      state.followers = new Set();
+				      return;
+				    }
+				    try {
+				      const { data, error } = await client.from("follows").select("follower_id").eq("followed_id", uid).limit(5000);
+				      if (error) throw error;
+				      state.followers = new Set((data || []).map((r) => r.follower_id).filter(Boolean));
+				    } catch (err) {
+				      console.warn("loadFollowers failed", err);
+				      state.followers = new Set();
+				    }
+				  }
+
+				  function followButtonLabel(targetUserId) {
+				    if (!targetUserId) return "Follow";
+				    const isFollowing = state.following.has(targetUserId);
+				    if (!isFollowing) return "Follow";
+				    const isFriend = state.followers.has(targetUserId);
+				    return isFriend ? "Friend ✓" : "Following";
+				  }
+
+				  async function followByHandle() {
+				    const raw = String(dom.followHandleInput?.value || "").trim();
+				    const handle = normalizeHandle(raw);
 			    if (!handle) {
 			      alert("Enter a handle like @someone");
 			      return;
@@ -1585,10 +1614,10 @@
 			    }
 			  }
 
-		  async function loadSupabaseSessions() {
-		    if (!dom.sessionsList) return;
-		    const client = initSupabaseClient();
-		    if (!client) {
+			  async function loadSupabaseSessions() {
+			    if (!dom.sessionsList) return;
+			    const client = initSupabaseClient();
+			    if (!client) {
 		      state.sessions = [];
 	      renderSupabaseSessions();
 		      setSessionsStatus("Supabase not configured");
@@ -1596,27 +1625,28 @@
 		    }
 		    ensureSessionsStatsSubscription();
 		    state.sessionsLoading = true;
-		    setSessionsStatus("Loading…");
-		    try {
-		      const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
-		      const authed = !!state.supabaseSession?.user?.id;
-		      if (dom.goLiveBtn) dom.goLiveBtn.disabled = feed !== "live" || !authed;
-		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = feed !== "live" || !authed || !state.currentLive?.id;
-		      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
-		      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
+			    setSessionsStatus("Loading…");
+			    try {
+			      const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+			      const authed = !!state.supabaseSession?.user?.id;
+			      const isLiveFeed = feed === "live" || feed === "live_nearby";
+			      if (dom.goLiveBtn) dom.goLiveBtn.disabled = !isLiveFeed || !authed;
+			      if (dom.endLiveBtn) dom.endLiveBtn.disabled = !isLiveFeed || !authed || !state.currentLive?.id;
+			      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
+			      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
 
 		      if (feed === "inbox") {
 		        await loadSupabaseInbox();
 		        return;
 		      }
-		      if (feed === "following") {
-		        await loadFollowingSessions({ q, sortKey });
-		        return;
-		      }
-		      if (feed === "live") {
-		        await loadSupabaseLive();
-		        return;
-		      }
+			      if (feed === "following") {
+			        await loadFollowingSessions({ q, sortKey });
+			        return;
+			      }
+			      if (feed === "live" || feed === "live_nearby") {
+			        await loadSupabaseLive({ near: feed === "live_nearby" });
+			        return;
+			      }
 
 		      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
 		      const zip =
@@ -1719,6 +1749,7 @@
 		    if (!client || !uid) {
 		      state.inbox = [];
 		      renderSupabaseInbox();
+		      updateInboxFeedLabel();
 		      setSessionsStatus("Sign in to view Inbox");
 		      return;
 		    }
@@ -1741,12 +1772,14 @@
 		      }
 		      state.inbox = rows.map((r) => ({ ...r, from: senderById.get(r.from_user_id) || null }));
 		      renderSupabaseInbox();
+		      updateInboxFeedLabel();
 		      const unread = state.inbox.filter((x) => x.status === "unread").length;
 		      setSessionsStatus(`${state.inbox.length} inbox items${unread ? ` · ${unread} unread` : ""}`);
 		    } catch (err) {
 		      console.warn("inbox load failed", err);
 		      state.inbox = [];
 		      renderSupabaseInbox();
+		      updateInboxFeedLabel();
 		      setSessionsStatus("Failed to load Inbox");
 		    } finally {
 		      state.inboxLoading = false;
@@ -1769,27 +1802,40 @@
 		        row.read_at = new Date().toISOString();
 		      }
 		      renderSupabaseInbox();
+		      updateInboxFeedLabel();
 		    } catch (err) {
 		      console.warn("markInboxRead failed", err);
 		    }
 		  }
 
-		  async function loadSupabaseLive() {
-		    const client = initSupabaseClient();
-		    if (!client) {
-		      state.live = [];
-		      renderSupabaseLive();
-		      setSessionsStatus("Supabase not configured");
-		      return;
-		    }
-		    state.liveLoading = true;
-		    setSessionsStatus("Loading live…");
-		    try {
-		      const zip = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim() || null;
-		      const { data, error } = await client.functions.invoke("list_live", {
-		        headers: getSupabaseAuthHeaders(),
-		        body: { zip, limit: 50 },
-		      });
+			  async function loadSupabaseLive({ near } = { near: false }) {
+			    const client = initSupabaseClient();
+			    if (!client) {
+			      state.live = [];
+			      renderSupabaseLive();
+			      setSessionsStatus("Supabase not configured");
+			      return;
+			    }
+			    state.liveLoading = true;
+			    setSessionsStatus("Loading live…");
+			    try {
+			      let zip = null;
+			      if (near) {
+			        const optIn = !!dom.profileLocationOptIn?.checked || localStorage.getItem(PROFILE_ZIP_OPTIN_KEY) === "true";
+			        const zipRaw = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim() || null;
+			        if (!optIn || !zipRaw) {
+			          state.live = [];
+			          state.presence = new Map();
+			          renderSupabaseLive();
+			          setSessionsStatus("Set zip + enable location opt-in for Live Nearby");
+			          return;
+			        }
+			        zip = zipRaw;
+			      }
+			      const { data, error } = await client.functions.invoke("list_live", {
+			        headers: getSupabaseAuthHeaders(),
+			        body: { zip, limit: 50 },
+			      });
 		      if (error) throw error;
 		      state.live = Array.isArray(data?.live) ? data.live : [];
 		      const hostIds = Array.from(new Set(state.live.map((l) => l?.host_user_id).filter(Boolean)));
@@ -1799,49 +1845,60 @@
 		      } else {
 		        state.presence = new Map();
 		      }
-		      renderSupabaseLive();
-		      setSessionsStatus(`${state.live.length} live${zip ? ` · near ${zip}` : ""}`);
-		    } catch (err) {
-		      console.warn("live load failed", err);
-		      state.live = [];
-		      renderSupabaseLive();
+			      renderSupabaseLive();
+			      setSessionsStatus(`${state.live.length} live${near && zip ? ` · near ${zip}` : ""}`);
+			    } catch (err) {
+			      console.warn("live load failed", err);
+			      state.live = [];
+			      renderSupabaseLive();
 		      setSessionsStatus("Failed to load Live");
 		    } finally {
 		      state.liveLoading = false;
 		    }
 		  }
 
-			  function renderSupabaseLive() {
-			    if (!dom.sessionsList) return;
-			    dom.sessionsList.innerHTML = "";
-			    const rows = state.live || [];
-		    if (!rows.length) {
-		      const li = document.createElement("li");
-		      const meta = document.createElement("div");
-		      meta.className = "meta";
-		      const title = document.createElement("div");
-		      title.className = "title";
-		      title.textContent = "No live streams right now.";
-		      const sub = document.createElement("div");
-		      sub.className = "subtitle";
-		      sub.textContent = "Go Live to create one (voice streaming scaffold is next).";
-		      meta.appendChild(title);
-		      meta.appendChild(sub);
-		      li.appendChild(meta);
-		      dom.sessionsList.appendChild(li);
-		      return;
-		    }
+				  function renderSupabaseLive() {
+				    if (!dom.sessionsList) return;
+				    dom.sessionsList.innerHTML = "";
+				    const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+				    const zip = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim();
+				    const optIn = !!dom.profileLocationOptIn?.checked || localStorage.getItem(PROFILE_ZIP_OPTIN_KEY) === "true";
+				    const rows = state.live || [];
+			    if (!rows.length) {
+			      const li = document.createElement("li");
+			      const meta = document.createElement("div");
+			      meta.className = "meta";
+			      const title = document.createElement("div");
+			      title.className = "title";
+			      if (feed === "live_nearby" && (!optIn || !zip)) {
+			        title.textContent = "Set zip + opt-in for Live Nearby.";
+			      } else {
+			        title.textContent = "No live streams right now.";
+			      }
+				      const sub = document.createElement("div");
+				      sub.className = "subtitle";
+				      if (feed === "live_nearby" && (!optIn || !zip)) {
+				        sub.textContent = "Update Profile → Location, then refresh.";
+				      } else {
+				        sub.textContent = "Go Live to create one, or check back soon.";
+				      }
+			      meta.appendChild(title);
+			      meta.appendChild(sub);
+			      li.appendChild(meta);
+			      dom.sessionsList.appendChild(li);
+			      return;
+			    }
 		    rows.forEach((row) => {
 		      const li = document.createElement("li");
 		      const meta = document.createElement("div");
 		      meta.className = "meta";
 		      const title = document.createElement("div");
 		      title.className = "title";
-		      title.textContent = row.title || "Live";
-		      const sub = document.createElement("div");
-		      sub.className = "subtitle";
-		      sub.textContent = [row.host || "Unknown", row.started_at ? new Date(row.started_at).toLocaleString() : null].filter(Boolean).join(" · ");
-		      const presence = row?.host_user_id ? state.presence.get(row.host_user_id) : null;
+			      title.textContent = row.title || "Live";
+			      const sub = document.createElement("div");
+			      sub.className = "subtitle";
+			      sub.textContent = [row.host || "Unknown", row.started_at ? new Date(row.started_at).toLocaleString() : null, row.zip || null].filter(Boolean).join(" · ");
+			      const presence = row?.host_user_id ? state.presence.get(row.host_user_id) : null;
 		      if (presence && isPresenceActive(presence)) {
 		        const badge = document.createElement("span");
 		        badge.className = "presence";
@@ -1857,16 +1914,35 @@
 		      }
 		      meta.appendChild(title);
 		      meta.appendChild(sub);
-		      const actions = document.createElement("div");
-		      actions.className = "actions";
-		      const joinBtn = document.createElement("button");
-		      joinBtn.type = "button";
-		      joinBtn.textContent = "Join";
-		      joinBtn.addEventListener("click", () => joinLive(row));
-		      actions.appendChild(joinBtn);
-		      li.appendChild(meta);
-		      li.appendChild(actions);
-		      dom.sessionsList.appendChild(li);
+			      const actions = document.createElement("div");
+			      actions.className = "actions";
+			      const joinBtn = document.createElement("button");
+			      joinBtn.type = "button";
+			      joinBtn.textContent = "Join";
+			      joinBtn.addEventListener("click", () => joinLive(row));
+			      actions.appendChild(joinBtn);
+			      const uid = state.supabaseSession?.user?.id || "";
+			      if (row?.host_user_id && uid && row.host_user_id !== uid) {
+			        const followBtn = document.createElement("button");
+			        followBtn.type = "button";
+			        followBtn.textContent = followButtonLabel(row.host_user_id);
+			        followBtn.addEventListener("click", async () => {
+			          try {
+			            if (state.following.has(row.host_user_id)) {
+			              await unfollowUserId(row.host_user_id);
+			            } else {
+			              await followUserId(row.host_user_id);
+			            }
+			            followBtn.textContent = followButtonLabel(row.host_user_id);
+			          } catch (err) {
+			            alert(`Follow failed: ${err?.message || "unknown error"}`);
+			          }
+			        });
+			        actions.appendChild(followBtn);
+			      }
+			      li.appendChild(meta);
+			      li.appendChild(actions);
+			      dom.sessionsList.appendChild(li);
 			    });
 			  }
 
@@ -1888,12 +1964,29 @@
 					    subscribeLiveRoom(row.id);
 					  }
 
-				  function closeLiveRoom() {
-				    resetLiveRtc();
-				    unsubscribeLiveRoom();
-				    state.liveRoom = null;
-				    state.liveRoomEvents = [];
-				    state.liveRoomProfiles = new Map();
+					  function closeLiveRoom() {
+					    try {
+					      const uid = state.supabaseSession?.user?.id || "";
+					      const hostId = state.liveRoom?.host_user_id || "";
+					      const rtc = state.liveRtc;
+					      if (uid && hostId && rtc) {
+					        if (uid === hostId) {
+					          const peerIds = Array.from(rtc.peers instanceof Map ? rtc.peers.keys() : []);
+					          const pendingIds = Array.from(rtc.pendingOffers instanceof Map ? rtc.pendingOffers.keys() : []);
+					          const toHangup = Array.from(new Set([...peerIds, ...pendingIds])).filter(Boolean);
+					          for (const remoteUserId of toHangup) {
+					            sendLiveRtcEvent("webrtc_hangup", { to_user_id: remoteUserId, from_user_id: uid, reason: "host_room_closed" }).catch(() => {});
+					          }
+					        } else if (rtc.listening) {
+					          sendLiveRtcEvent("webrtc_hangup", { to_user_id: hostId, from_user_id: uid, reason: "listener_room_closed" }).catch(() => {});
+					        }
+					      }
+					    } catch {}
+					    resetLiveRtc();
+					    unsubscribeLiveRoom();
+					    state.liveRoom = null;
+					    state.liveRoomEvents = [];
+					    state.liveRoomProfiles = new Map();
 				    if (dom.liveRoom) dom.liveRoom.classList.add("collapsed");
 				  }
 
@@ -1902,18 +1995,18 @@
 				    if (!row) return;
 				    if (dom.liveRoomTitle) dom.liveRoomTitle.textContent = row.title || "Live Room";
 				    const bits = [];
-				    if (row.host) {
-				      const hostLabel = String(row.host);
-				      bits.push(hostLabel.startsWith("@") ? hostLabel : `@${hostLabel}`);
-				    } else {
-				      bits.push("live");
-				    }
-				    if (row.room_name) bits.push(`room: ${row.room_name}`);
-				    bits.push("voice streaming soon");
-				    if (dom.liveRoomSubtitle) dom.liveRoomSubtitle.textContent = bits.filter(Boolean).join(" · ");
-				    if (dom.liveRoomSend) dom.liveRoomSend.disabled = !(state.supabaseSession?.user?.id || "");
-				    updateLiveRtcUi();
-				  }
+					    if (row.host) {
+					      const hostLabel = String(row.host);
+					      bits.push(hostLabel.startsWith("@") ? hostLabel : `@${hostLabel}`);
+					    } else {
+					      bits.push("live");
+					    }
+					    if (row.room_name) bits.push(`room: ${row.room_name}`);
+					    bits.push("voice (beta)");
+					    if (dom.liveRoomSubtitle) dom.liveRoomSubtitle.textContent = bits.filter(Boolean).join(" · ");
+					    if (dom.liveRoomSend) dom.liveRoomSend.disabled = !(state.supabaseSession?.user?.id || "");
+					    updateLiveRtcUi();
+					  }
 
 				  const LIVE_RTC_EVENT_TYPES = new Set(["webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_hangup"]);
 				  const LIVE_RTC_CONFIG = {
@@ -2044,10 +2137,10 @@
 				    return null;
 				  }
 
-				  async function handleLiveRtcSignal(ev) {
-				    if (!ev?.id || state.liveRtcProcessed.has(ev.id)) return;
-				    if (!isLiveRtcEventType(ev.type)) return;
-				    state.liveRtcProcessed.add(ev.id);
+					  async function handleLiveRtcSignal(ev) {
+					    if (!ev?.id || state.liveRtcProcessed.has(ev.id)) return;
+					    if (!isLiveRtcEventType(ev.type)) return;
+					    state.liveRtcProcessed.add(ev.id);
 
 				    const rtc = ensureLiveRtc();
 				    const uid = state.supabaseSession?.user?.id || "";
@@ -2091,9 +2184,9 @@
 				      return;
 				    }
 
-				    if (ev.type === "webrtc_ice") {
-				      const to = payload.to_user_id || "";
-				      if (!uid || to !== uid) return;
+					    if (ev.type === "webrtc_ice") {
+					      const to = payload.to_user_id || "";
+					      if (!uid || to !== uid) return;
 				      const fromUserId = payload.from_user_id || ev.user_id || "";
 				      const cand = normalizeCandidate(payload.candidate);
 				      if (!cand) return;
@@ -2116,12 +2209,36 @@
 				        rtc.pendingCandidates.set(hostId, q);
 				        return;
 				      }
-				      try {
-				        await rtc.pc.addIceCandidate(cand);
-				      } catch {}
-				      return;
-				    }
-				  }
+					      try {
+					        await rtc.pc.addIceCandidate(cand);
+					      } catch {}
+					      return;
+					    }
+
+					    if (ev.type === "webrtc_hangup") {
+					      const to = payload.to_user_id || "";
+					      if (to && uid && to !== uid) return;
+					      const fromUserId = payload.from_user_id || ev.user_id || "";
+					      if (!fromUserId) return;
+					      if (isHost) {
+					        const pc = rtc.peers.get(fromUserId) || null;
+					        if (!pc) return;
+					        try {
+					          pc.close();
+					        } catch {}
+					        rtc.peers.delete(fromUserId);
+					        rtc.pendingCandidates.delete(fromUserId);
+					        rtc.pendingOffers.delete(fromUserId);
+					        updateLiveRtcUi();
+					        return;
+					      }
+					      if (hostId && fromUserId !== hostId) return;
+					      resetLiveRtc();
+					      state.liveRtcProcessed = new Set();
+					      renderLiveRoom();
+					      return;
+					    }
+					  }
 
 				  async function hostAcceptOffer(remoteUserId, offerSdp) {
 				    const rtc = ensureLiveRtc();
@@ -2179,8 +2296,8 @@
 				    updateLiveRtcUi();
 				  }
 
-				  async function toggleLiveMic() {
-				    const uid = state.supabaseSession?.user?.id || "";
+					  async function toggleLiveMic() {
+					    const uid = state.supabaseSession?.user?.id || "";
 				    if (!uid) {
 				      alert("Sign in with Supabase to enable mic.");
 				      return;
@@ -2189,13 +2306,19 @@
 				      alert("Only the host can enable mic.");
 				      return;
 				    }
-				    const rtc = ensureLiveRtc();
-				    if (rtc.micEnabled) {
-				      resetLiveRtc();
-				      state.liveRtcProcessed = new Set();
-				      renderLiveRoom();
-				      return;
-				    }
+					    const rtc = ensureLiveRtc();
+					    if (rtc.micEnabled) {
+					      const peerIds = Array.from(rtc.peers instanceof Map ? rtc.peers.keys() : []);
+					      const pendingIds = Array.from(rtc.pendingOffers instanceof Map ? rtc.pendingOffers.keys() : []);
+					      const toHangup = Array.from(new Set([...peerIds, ...pendingIds])).filter(Boolean);
+					      for (const remoteUserId of toHangup) {
+					        sendLiveRtcEvent("webrtc_hangup", { to_user_id: remoteUserId, from_user_id: uid, reason: "host_mic_off" }).catch(() => {});
+					      }
+					      resetLiveRtc();
+					      state.liveRtcProcessed = new Set();
+					      renderLiveRoom();
+					      return;
+					    }
 				    try {
 				      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 				      rtc.localStream = stream;
@@ -2214,8 +2337,8 @@
 				    updateLiveRtcUi();
 				  }
 
-				  async function toggleLiveAudio() {
-				    const uid = state.supabaseSession?.user?.id || "";
+					  async function toggleLiveAudio() {
+					    const uid = state.supabaseSession?.user?.id || "";
 				    if (!uid) {
 				      alert("Sign in with Supabase to enable audio.");
 				      return;
@@ -2224,16 +2347,17 @@
 				      toggleLiveMic();
 				      return;
 				    }
-				    const rtc = ensureLiveRtc();
-				    const hostId = state.liveRoom?.host_user_id || "";
-				    if (!hostId) return;
+					    const rtc = ensureLiveRtc();
+					    const hostId = state.liveRoom?.host_user_id || "";
+					    if (!hostId) return;
 
-				    if (rtc.listening) {
-				      resetLiveRtc();
-				      state.liveRtcProcessed = new Set();
-				      renderLiveRoom();
-				      return;
-				    }
+					    if (rtc.listening) {
+					      sendLiveRtcEvent("webrtc_hangup", { to_user_id: hostId, from_user_id: uid, reason: "listener_off" }).catch(() => {});
+					      resetLiveRtc();
+					      state.liveRtcProcessed = new Set();
+					      renderLiveRoom();
+					      return;
+					    }
 
 				    try {
 				      const pc = new RTCPeerConnection(LIVE_RTC_CONFIG);
@@ -2480,27 +2604,36 @@
 			        openLiveRoom({ ...state.currentLive, host_user_id: uid, host: hostLabel });
 			      }
 			      alert(state.currentLive?.room_name ? `You're live. Room: ${state.currentLive.room_name}` : "You're live.");
-			      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
-			    } catch (err) {
+				      if (["live", "live_nearby"].includes(state.sessionsFeed || dom.sessionsFeed?.value || "")) loadSupabaseSessions();
+				    } catch (err) {
 		      console.warn("startLive failed", err);
 		      alert(`Could not start live: ${err?.message || "unknown error"}`);
 		    }
 		  }
 
-		  async function endLive() {
-		    const client = initSupabaseClient();
-		    const uid = state.supabaseSession?.user?.id || "";
-		    if (!client || !uid) return;
-		    const id = state.currentLive?.id || null;
-		    if (!id) {
-		      alert("No active live session.");
-		      return;
-		    }
-		    try {
-		      const { error } = await client.functions.invoke("end_live", {
-		        headers: getSupabaseAuthHeaders(),
-		        body: { id },
-		      });
+			  async function endLive() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) return;
+			    const id = state.currentLive?.id || null;
+			    if (!id) {
+			      alert("No active live session.");
+			      return;
+			    }
+			    try {
+			      if (state.liveRoom?.id === id && isHostInLiveRoom() && state.liveRtc) {
+			        const rtc = state.liveRtc;
+			        const peerIds = Array.from(rtc.peers instanceof Map ? rtc.peers.keys() : []);
+			        const pendingIds = Array.from(rtc.pendingOffers instanceof Map ? rtc.pendingOffers.keys() : []);
+			        const toHangup = Array.from(new Set([...peerIds, ...pendingIds])).filter(Boolean);
+			        for (const remoteUserId of toHangup) {
+			          sendLiveRtcEvent("webrtc_hangup", { to_user_id: remoteUserId, from_user_id: uid, reason: "host_end_live" }).catch(() => {});
+			        }
+			      }
+			      const { error } = await client.functions.invoke("end_live", {
+			        headers: getSupabaseAuthHeaders(),
+			        body: { id },
+			      });
 			      if (error) throw error;
 			      state.currentLive = null;
 			      if (dom.endLiveBtn) dom.endLiveBtn.disabled = true;
@@ -2508,8 +2641,8 @@
 			        closeLiveRoom();
 			      }
 			      alert("Live ended.");
-			      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
-			    } catch (err) {
+				      if (["live", "live_nearby"].includes(state.sessionsFeed || dom.sessionsFeed?.value || "")) loadSupabaseSessions();
+				    } catch (err) {
 		      console.warn("endLive failed", err);
 		      alert(`Could not end live: ${err?.message || "unknown error"}`);
 		    }
@@ -2578,24 +2711,24 @@
 		        likeBtn.addEventListener("click", () => likeSession(row.id));
 		        actions.appendChild(likeBtn);
 		      }
-		      if (row?.host_user_id && row.host_user_id !== (state.supabaseSession?.user?.id || "")) {
-		        const followBtn = document.createElement("button");
-		        followBtn.type = "button";
-		        followBtn.textContent = state.following.has(row.host_user_id) ? "Unfollow" : "Follow";
-		        followBtn.addEventListener("click", async () => {
-		          try {
-		            if (state.following.has(row.host_user_id)) {
-		              await unfollowUserId(row.host_user_id);
-		            } else {
-		              await followUserId(row.host_user_id);
-		            }
-		            followBtn.textContent = state.following.has(row.host_user_id) ? "Unfollow" : "Follow";
-		          } catch (err) {
-		            alert(`Follow failed: ${err?.message || "unknown error"}`);
-		          }
-		        });
-		        actions.appendChild(followBtn);
-		      }
+			      if (row?.host_user_id && row.host_user_id !== (state.supabaseSession?.user?.id || "")) {
+			        const followBtn = document.createElement("button");
+			        followBtn.type = "button";
+			        followBtn.textContent = followButtonLabel(row.host_user_id);
+			        followBtn.addEventListener("click", async () => {
+			          try {
+			            if (state.following.has(row.host_user_id)) {
+			              await unfollowUserId(row.host_user_id);
+			            } else {
+			              await followUserId(row.host_user_id);
+			            }
+			            followBtn.textContent = followButtonLabel(row.host_user_id);
+			          } catch (err) {
+			            alert(`Follow failed: ${err?.message || "unknown error"}`);
+			          }
+			        });
+			        actions.appendChild(followBtn);
+			      }
 		      if (row?.id) {
 		        const sendBtn = document.createElement("button");
 		        sendBtn.type = "button";
@@ -2651,13 +2784,16 @@
 		      meta.appendChild(sub);
 		      const actions = document.createElement("div");
 		      actions.className = "actions";
-		      if (item.session_id) {
-		        const loadBtn = document.createElement("button");
-		        loadBtn.type = "button";
-		        loadBtn.textContent = "Load";
-		        loadBtn.addEventListener("click", () => loadSupabaseSession({ id: item.session_id }));
-		        actions.appendChild(loadBtn);
-		      }
+			      if (item.session_id) {
+			        const loadBtn = document.createElement("button");
+			        loadBtn.type = "button";
+			        loadBtn.textContent = "Load";
+			        loadBtn.addEventListener("click", () => {
+			          loadSupabaseSession({ id: item.session_id });
+			          if (item.status === "unread") markInboxRead(item.id);
+			        });
+			        actions.appendChild(loadBtn);
+			      }
 		      if (item.status === "unread") {
 		        const readBtn = document.createElement("button");
 		        readBtn.type = "button";
@@ -2720,9 +2856,17 @@
 		    }
 		  }
 
-	  function setSessionsStatus(text) {
-	    if (dom.sessionsStatus) dom.sessionsStatus.textContent = text;
-	  }
+		  function setSessionsStatus(text) {
+		    if (dom.sessionsStatus) dom.sessionsStatus.textContent = text;
+		  }
+
+		  function updateInboxFeedLabel() {
+		    if (!dom.sessionsFeed) return;
+		    const opt = dom.sessionsFeed.querySelector('option[value="inbox"]');
+		    if (!opt) return;
+		    const unread = (state.inbox || []).filter((x) => x.status === "unread").length;
+		    opt.textContent = unread ? `Inbox (${unread})` : "Inbox";
+		  }
 
 	  function isSafeSessionUrl(url) {
 	    if (!url) return false;

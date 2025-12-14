@@ -536,11 +536,11 @@
 	    const RTC_EVENT_TYPES = new Set(["webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_hangup"]);
 	    const isHost = !!(userId && live?.host_user_id && userId === live.host_user_id);
 
-	    const updateVoice = () => {
-	      const rtc = rtcRef.current;
-	      const peerCount = rtc.peers instanceof Map ? rtc.peers.size : 0;
-	      setMicOn(!!rtc.micEnabled);
-	      setAudioOn(!!rtc.listening);
+		    const updateVoice = () => {
+		      const rtc = rtcRef.current;
+		      const peerCount = rtc.peers instanceof Map ? rtc.peers.size : 0;
+		      setMicOn(!!rtc.micEnabled);
+		      setAudioOn(!!rtc.listening);
 	      if (!userId) {
 	        setVoiceStatus("Sign in for voice");
 	      } else if (isHost) {
@@ -548,14 +548,14 @@
 	        else setVoiceStatus(rtc.pendingOffers?.size ? `Enable mic to accept ${rtc.pendingOffers.size} listener${rtc.pendingOffers.size === 1 ? "" : "s"}` : "Mic off");
 	      } else {
 	        setVoiceStatus(rtc.listening ? "Listening" : "Audio off");
-	      }
-	    };
+		      }
+		    };
 
-	    const resetRtc = () => {
-	      const rtc = rtcRef.current;
-	      try {
-	        rtc.pc?.close();
-	      } catch {}
+		    const shutdownRtc = () => {
+		      const rtc = rtcRef.current;
+		      try {
+		        rtc.pc?.close();
+		      } catch {}
 	      rtc.pc = null;
 	      try {
 	        if (rtc.peers instanceof Map) {
@@ -576,19 +576,42 @@
 	      rtc.listening = false;
 	      rtc.pendingOffers = new Map();
 	      rtc.pendingCandidates = new Map();
-	      if (audioRef.current) {
-	        try {
-	          audioRef.current.srcObject = null;
-	        } catch {}
-	      }
-	      updateVoice();
-	    };
+		      if (audioRef.current) {
+		        try {
+		          audioRef.current.srcObject = null;
+		        } catch {}
+		      }
+		    };
 
-	    useEffect(() => {
-	      rtcRef.current.processed = new Set();
-	      resetRtc();
-	      // eslint-disable-next-line react-hooks/exhaustive-deps
-	    }, [live?.id]);
+		    const resetRtc = () => {
+		      shutdownRtc();
+		      updateVoice();
+		    };
+
+		    useEffect(() => {
+		      rtcRef.current.processed = new Set();
+		      resetRtc();
+		      return () => {
+		        try {
+		          const rtc = rtcRef.current;
+		          const hostId = live?.host_user_id || "";
+		          if (userId && hostId && rtc) {
+		            if (userId === hostId) {
+		              const peerIds = Array.from(rtc.peers instanceof Map ? rtc.peers.keys() : []);
+		              const pendingIds = Array.from(rtc.pendingOffers instanceof Map ? rtc.pendingOffers.keys() : []);
+		              const toHangup = Array.from(new Set([...peerIds, ...pendingIds])).filter(Boolean);
+		              for (const remoteUserId of toHangup) {
+		                sendRtcEvent("webrtc_hangup", { to_user_id: remoteUserId, from_user_id: userId, reason: "host_room_closed" }).catch(() => {});
+		              }
+		            } else if (rtc.listening) {
+		              sendRtcEvent("webrtc_hangup", { to_user_id: hostId, from_user_id: userId, reason: "listener_room_closed" }).catch(() => {});
+		            }
+		          }
+		        } catch {}
+		        shutdownRtc();
+		      };
+		      // eslint-disable-next-line react-hooks/exhaustive-deps
+		    }, [live?.id]);
 
 	    useEffect(() => {
 	      profilesRef.current = new Map();
@@ -756,11 +779,11 @@
 		      updateVoice();
 		    };
 
-		    const handleRtcSignal = async (ev) => {
-		      const rtc = rtcRef.current;
-		      if (!ev?.id || rtc.processed.has(ev.id)) return;
-		      rtc.processed.add(ev.id);
-		      const payload = ev?.payload || {};
+			    const handleRtcSignal = async (ev) => {
+			      const rtc = rtcRef.current;
+			      if (!ev?.id || rtc.processed.has(ev.id)) return;
+			      rtc.processed.add(ev.id);
+			      const payload = ev?.payload || {};
 
 		      if (ev.type === "webrtc_offer" && isHost) {
 		        const to = payload.to_user_id || live?.host_user_id || "";
@@ -799,9 +822,9 @@
 		        return;
 		      }
 
-		      if (ev.type === "webrtc_ice") {
-		        const to = payload.to_user_id || "";
-		        if (!userId || to !== userId) return;
+			      if (ev.type === "webrtc_ice") {
+			        const to = payload.to_user_id || "";
+			        if (!userId || to !== userId) return;
 		        const fromUserId = payload.from_user_id || ev.user_id || "";
 		        const cand = normalizeCandidate(payload.candidate);
 		        if (!cand) return;
@@ -825,22 +848,52 @@
 		          rtc.pendingCandidates.set(hostId, q);
 		          return;
 		        }
-		        try {
-		          await rtc.pc.addIceCandidate(cand);
-		        } catch {}
-		        return;
-		      }
-		    };
+			        try {
+			          await rtc.pc.addIceCandidate(cand);
+			        } catch {}
+			        return;
+			      }
 
-		    const toggleMic = async () => {
-		      if (!userId) return toast("Sign in to enable mic");
-		      if (!isHost) return toast("Only host can enable mic");
-		      const rtc = rtcRef.current;
-		      if (rtc.micEnabled) {
-		        resetRtc();
-		        rtc.processed = new Set();
-		        return;
-		      }
+			      if (ev.type === "webrtc_hangup") {
+			        const to = payload.to_user_id || "";
+			        if (to && userId && to !== userId) return;
+			        const fromUserId = payload.from_user_id || ev.user_id || "";
+			        if (!fromUserId) return;
+			        if (isHost) {
+			          const pc = rtc.peers.get(fromUserId) || null;
+			          if (!pc) return;
+			          try {
+			            pc.close();
+			          } catch {}
+			          rtc.peers.delete(fromUserId);
+			          rtc.pendingCandidates.delete(fromUserId);
+			          rtc.pendingOffers.delete(fromUserId);
+			          updateVoice();
+			          return;
+			        }
+			        const hostId = live?.host_user_id || "";
+			        if (hostId && fromUserId !== hostId) return;
+			        resetRtc();
+			        rtc.processed = new Set();
+			        return;
+			      }
+			    };
+
+			    const toggleMic = async () => {
+			      if (!userId) return toast("Sign in to enable mic");
+			      if (!isHost) return toast("Only host can enable mic");
+			      const rtc = rtcRef.current;
+			      if (rtc.micEnabled) {
+			        const peerIds = Array.from(rtc.peers instanceof Map ? rtc.peers.keys() : []);
+			        const pendingIds = Array.from(rtc.pendingOffers instanceof Map ? rtc.pendingOffers.keys() : []);
+			        const toHangup = Array.from(new Set([...peerIds, ...pendingIds])).filter(Boolean);
+			        for (const remoteUserId of toHangup) {
+			          sendRtcEvent("webrtc_hangup", { to_user_id: remoteUserId, from_user_id: userId, reason: "host_mic_off" }).catch(() => {});
+			        }
+			        resetRtc();
+			        rtc.processed = new Set();
+			        return;
+			      }
 		      try {
 		        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		        rtc.localStream = stream;
@@ -858,17 +911,18 @@
 		      updateVoice();
 		    };
 
-		    const toggleAudio = async () => {
-		      if (!userId) return toast("Sign in to enable audio");
-		      if (isHost) return toggleMic();
-		      const rtc = rtcRef.current;
-		      const hostId = live?.host_user_id || "";
-		      if (!hostId) return;
-		      if (rtc.listening) {
-		        resetRtc();
-		        rtc.processed = new Set();
-		        return;
-		      }
+			    const toggleAudio = async () => {
+			      if (!userId) return toast("Sign in to enable audio");
+			      if (isHost) return toggleMic();
+			      const rtc = rtcRef.current;
+			      const hostId = live?.host_user_id || "";
+			      if (!hostId) return;
+			      if (rtc.listening) {
+			        sendRtcEvent("webrtc_hangup", { to_user_id: hostId, from_user_id: userId, reason: "listener_off" }).catch(() => {});
+			        resetRtc();
+			        rtc.processed = new Set();
+			        return;
+			      }
 		      try {
 		        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 		        rtc.pc = pc;
@@ -911,7 +965,7 @@
 		    };
 
 		    const hostLabel = live?.host ? (String(live.host).startsWith("@") ? String(live.host) : `@${live.host}`) : "live";
-		    const subtitle = [hostLabel, live?.room_name ? `room: ${live.room_name}` : null, "voice streaming soon"].filter(Boolean).join(" · ");
+			    const subtitle = [hostLabel, live?.room_name ? `room: ${live.room_name}` : null, "voice (beta)"].filter(Boolean).join(" · ");
 
 	    const send = async () => {
 	      const t = String(text || "").trim();
@@ -997,15 +1051,17 @@
 		    </div>`;
 		  }
 
-	  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, likes, toggleLike, onLoad, toast }) {
-	    const [mode, setMode] = useState("new");
-	    const [q, setQ] = useState("");
-	    const [rows, setRows] = useState(SAMPLE_SESSIONS);
-	    const [liveRoom, setLiveRoom] = useState(null);
-	    const [following, setFollowing] = useState(() => new Set());
-	    const [presence, setPresence] = useState(() => new Map());
-	    const [inbox, setInbox] = useState([]);
-	    const userId = supabaseSession?.user?.id || "";
+		  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, zipOptIn, likes, toggleLike, onLoad, toast }) {
+		    const [mode, setMode] = useState("new");
+		    const [liveScope, setLiveScope] = useState("all");
+		    const [q, setQ] = useState("");
+		    const [rows, setRows] = useState(SAMPLE_SESSIONS);
+		    const [liveRoom, setLiveRoom] = useState(null);
+		    const [following, setFollowing] = useState(() => new Set());
+		    const [followers, setFollowers] = useState(() => new Set());
+		    const [presence, setPresence] = useState(() => new Map());
+		    const [inbox, setInbox] = useState([]);
+		    const userId = supabaseSession?.user?.id || "";
 
 	    if (liveRoom) {
 	      return html`<${LiveRoomScreen} supabase=${supabase} live=${liveRoom} userId=${userId} onClose=${() => setLiveRoom(null)} toast=${toast} />`;
@@ -1025,32 +1081,81 @@
       }
     };
 
-    const loadFollowing = async () => {
-      if (!supabase || !userId) {
-        setFollowing(new Set());
-        return [];
-      }
-      try {
-        const { data, error } = await supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000);
-        if (error) throw error;
-        const ids = (data || []).map((r) => r.followed_id).filter(Boolean);
-        setFollowing(new Set(ids));
-        return ids;
-      } catch {
-        setFollowing(new Set());
-        return [];
-      }
-    };
+	    const loadFollowing = async () => {
+	      if (!supabase || !userId) {
+	        setFollowing(new Set());
+	        return [];
+	      }
+	      try {
+	        const { data, error } = await supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000);
+	        if (error) throw error;
+	        const ids = (data || []).map((r) => r.followed_id).filter(Boolean);
+	        setFollowing(new Set(ids));
+	        return ids;
+	      } catch {
+	        setFollowing(new Set());
+	        return [];
+	      }
+	    };
 
-    const isActive = (p) => {
-      const last = Date.parse(p?.last_seen_at || "");
-      return Number.isFinite(last) && Date.now() - last < 70_000;
-    };
+	    const loadFollowers = async () => {
+	      if (!supabase || !userId) {
+	        setFollowers(new Set());
+	        return [];
+	      }
+	      try {
+	        const { data, error } = await supabase.from("follows").select("follower_id").eq("followed_id", userId).limit(5000);
+	        if (error) throw error;
+	        const ids = (data || []).map((r) => r.follower_id).filter(Boolean);
+	        setFollowers(new Set(ids));
+	        return ids;
+	      } catch {
+	        setFollowers(new Set());
+	        return [];
+	      }
+	    };
 
-    useEffect(() => {
-      let ignore = false;
+	    const isActive = (p) => {
+	      const last = Date.parse(p?.last_seen_at || "");
+	      return Number.isFinite(last) && Date.now() - last < 70_000;
+	    };
 
-      const run = async () => {
+	    useEffect(() => {
+	      if (!supabase || !userId) {
+	        setFollowing(new Set());
+	        setFollowers(new Set());
+	        return;
+	      }
+	      loadFollowing();
+	      loadFollowers();
+	      // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [supabase, userId]);
+
+	    useEffect(() => {
+	      if (!supabase || !userId) return;
+	      const channel = supabase
+	        .channel(`rs-inbox-${userId}`)
+	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${userId}` }, (payload) => {
+	          const it = payload?.new || null;
+	          if (!it?.id) return;
+	          setInbox((prev) => {
+	            const arr = Array.isArray(prev) ? prev : [];
+	            if (arr.some((x) => x?.id === it.id)) return arr;
+	            return [{ ...it, from: null }, ...arr];
+	          });
+	        })
+	        .subscribe();
+	      return () => {
+	        try {
+	          channel.unsubscribe().catch(() => {});
+	        } catch {}
+	      };
+	    }, [supabase, userId]);
+
+	    useEffect(() => {
+	      let ignore = false;
+
+	      const run = async () => {
         if (!supabase) {
           if (!ignore) setRows(SAMPLE_SESSIONS);
           if (!ignore) setInbox([]);
@@ -1125,15 +1230,21 @@
             return;
           }
 
-          if (mode === "live") {
-            const zipFilter = zip ? String(zip).trim() : null;
-            const { data, error } = await supabase.functions.invoke("list_live", {
-              headers: authHeaders || {},
-              body: { zip: zipFilter || null, limit: 50 },
-            });
-            if (error) throw error;
-            const live = Array.isArray(data?.live) ? data.live : [];
-            if (!ignore) setRows(live);
+	          if (mode === "live") {
+	            const wantsNear = liveScope === "near";
+	            const zipFilter = zip ? String(zip).trim() : null;
+	            if (wantsNear && (!zipFilter || !zipOptIn)) {
+	              if (!ignore) setRows([]);
+	              if (!ignore) setPresence(new Map());
+	              return;
+	            }
+	            const { data, error } = await supabase.functions.invoke("list_live", {
+	              headers: authHeaders || {},
+	              body: { zip: wantsNear ? zipFilter || null : null, limit: 50 },
+	            });
+	            if (error) throw error;
+	            const live = Array.isArray(data?.live) ? data.live : [];
+	            if (!ignore) setRows(live);
             await fetchPresence(Array.from(new Set(live.map((x) => x.host_user_id).filter(Boolean))));
             return;
           }
@@ -1152,17 +1263,17 @@
         }
       };
 
-      run();
-      return () => {
-        ignore = true;
-      };
-    }, [supabase, userId, mode, q, zip]);
+	      run();
+	      return () => {
+	        ignore = true;
+	      };
+	    }, [supabase, userId, mode, liveScope, q, zip, zipOptIn]);
 
-    const toggleFollow = async (targetUserId) => {
-      if (!supabase || !userId) {
-        toast("Sign in to follow");
-        return;
-      }
+	    const toggleFollow = async (targetUserId) => {
+	      if (!supabase || !userId) {
+	        toast("Sign in to follow");
+	        return;
+	      }
       if (!targetUserId || targetUserId === userId) return;
       const next = new Set(Array.from(following));
       try {
@@ -1179,12 +1290,26 @@
       } catch {
         toast("Follow failed");
       }
-    };
+	    };
 
-    const sendToHandle = async (sessionId) => {
-      if (!supabase || !userId) {
-        toast("Sign in to send");
-        return;
+	    const markInboxRead = async (itemId) => {
+	      if (!supabase || !userId || !itemId) return;
+	      try {
+	        await supabase
+	          .from("inbox_items")
+	          .update({ status: "read", read_at: new Date().toISOString() })
+	          .eq("id", itemId)
+	          .eq("to_user_id", userId);
+	        setInbox((prev) => (prev || []).map((it) => (it.id === itemId ? { ...it, status: "read" } : it)));
+	      } catch {
+	        // ignore
+	      }
+	    };
+
+	    const sendToHandle = async (sessionId) => {
+	      if (!supabase || !userId) {
+	        toast("Sign in to send");
+	        return;
       }
       const raw = window.prompt("Send to handle (e.g. @someone):") || "";
       const handle = String(raw).trim().replace(/^@+/, "").toLowerCase().replace(/[^a-z0-9_]+/g, "");
@@ -1209,47 +1334,62 @@
       }
     };
 
-    const subtitle = (s) => {
-      const bits = [];
-      if (s?.host) bits.push(`by ${s.host}`);
-      if (s?.genre) bits.push(s.genre);
+	    const subtitle = (s) => {
+	      const bits = [];
+	      if (s?.host) bits.push(`by ${s.host}`);
+	      if (s?.genre) bits.push(s.genre);
       const stats = [];
       if (typeof s?.plays === "number") stats.push(`${s.plays} plays`);
       if (typeof s?.likes === "number") stats.push(`${s.likes} likes`);
       if (stats.length) bits.push(stats.join(" · "));
-      return bits.join(" · ");
-    };
+	      return bits.join(" · ");
+	    };
 
-    return html`<div className="fade-in">
-      <div className="section" style=${{ marginTop: 0 }}>
-        <div className="section-head">
-          <div className="section-title">Sessions</div>
+	    const unreadInbox = (inbox || []).filter((it) => it?.status === "unread").length;
+	    const inboxLabel = unreadInbox ? `Inbox (${unreadInbox})` : "Inbox";
+
+	    return html`<div className="fade-in">
+	      <div className="section" style=${{ marginTop: 0 }}>
+	        <div className="section-head">
+	          <div className="section-title">Sessions</div>
           <div className="section-note">${supabase ? (userId ? "connected" : "browse") : "demo"}</div>
         </div>
-        <${Segmented}
-          options=${[
-            { label: "New", value: "new" },
-            { label: "Top", value: "popular" },
-            { label: "Near", value: "nearby" },
-            { label: "Follow", value: "following" },
-            { label: "Inbox", value: "inbox" },
-            { label: "Live", value: "live" },
-          ]}
-          value=${mode}
-          onChange=${setMode}
+	        <${Segmented}
+	          options=${[
+	            { label: "New", value: "new" },
+	            { label: "Top", value: "popular" },
+	            { label: "Near", value: "nearby" },
+	            { label: "Follow", value: "following" },
+	            { label: inboxLabel, value: "inbox" },
+	            { label: "Live", value: "live" },
+	          ]}
+	          value=${mode}
+	          onChange=${setMode}
         />
       </div>
 
-      <div className="section">
-        <div className="field">
-          <${Icon} name="search" />
-          <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "inbox" ? "Filter not wired…" : "Search sessions…"} />
-        </div>
-      </div>
+	      <div className="section">
+	        <div className="field">
+	          <${Icon} name="search" />
+	          <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "inbox" ? "Filter not wired…" : "Search sessions…"} />
+	        </div>
+	      </div>
 
-      ${mode === "inbox"
-        ? html`<div className="section">
-            <div className="list">
+	      ${mode === "live" &&
+	      html`<div className="section" style=${{ marginTop: "-8px" }}>
+	        <${Segmented}
+	          options=${[
+	            { label: "All", value: "all" },
+	            { label: zip ? `Near ${zip}` : "Near", value: "near" },
+	          ]}
+	          value=${liveScope}
+	          onChange=${setLiveScope}
+	        />
+	      </div>`}
+
+	      ${mode === "inbox"
+	        ? html`<div className="section">
+	            <div className="list">
               ${(inbox || []).map((it) => {
                 const from = it?.from?.handle ? `@${it.from.handle}` : it?.from?.display_name || "Someone";
                 return html`<div className="item">
@@ -1257,12 +1397,20 @@
                   <div className="grow meta">
                     <div className="t">${it.status === "unread" ? "New session" : "Session"} · ${from}</div>
                     <div className="s">${[it.note || null, it.created_at ? new Date(it.created_at).toLocaleString() : null].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <button className="pill icon primary" onClick=${() => onLoad({ id: it.session_id })} aria-label="Load" type="button">
-                    <${Icon} name="play" />
-                  </button>
-                </div>`;
-              })}
+	                  </div>
+	                  <button
+	                    className="pill icon primary"
+	                    onClick=${() => {
+	                      if (it.status === "unread") markInboxRead(it.id);
+	                      onLoad({ id: it.session_id });
+	                    }}
+	                    aria-label="Load"
+	                    type="button"
+	                  >
+	                    <${Icon} name="play" />
+	                  </button>
+	                </div>`;
+	              })}
               ${(!inbox || !inbox.length) &&
               html`<div className="card">
                 <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${userId ? "No messages yet." : "Sign in to view your inbox."}</div>
@@ -1276,12 +1424,14 @@
                 const isLiked = likes.has(s.id);
                 const likeCount = (s.likes || 0) + (isLiked ? 1 : 0);
                 const p = s?.host_user_id ? presence.get(s.host_user_id) : null;
-                const active = p && isActive(p);
-                const canFollow = !!(userId && s?.host_user_id && s.host_user_id !== userId);
-                const followed = canFollow && following.has(s.host_user_id);
-	                if (isLive) {
-	                  const started = s?.started_at ? new Date(s.started_at).toLocaleString() : null;
-	                  const join = () => {
+	                const active = p && isActive(p);
+	                const canFollow = !!(userId && s?.host_user_id && s.host_user_id !== userId);
+	                const followed = canFollow && following.has(s.host_user_id);
+	                const friend = followed && followers.has(s.host_user_id);
+	                const followLabel = !followed ? "Follow" : friend ? "Friend ✓" : "Following";
+		                if (isLive) {
+		                  const started = s?.started_at ? new Date(s.started_at).toLocaleString() : null;
+		                  const join = () => {
 	                    if (!s?.id) return toast("No live id");
 	                    setLiveRoom(s);
 	                  };
@@ -1289,21 +1439,21 @@
 	                    <div className="thumb"></div>
                     <div className="grow meta">
                       <div className="t">${s.title || "Live"}</div>
-                      <div className="s">
-                        ${[s.host || "Unknown", started].filter(Boolean).join(" · ")}
-                        ${active &&
-                        html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
-                          <span className="presence-dot"></span><span className="presence-label">active</span>
-                        </span>`}
+	                      <div className="s">
+	                        ${[s.host || "Unknown", started, s.zip || null].filter(Boolean).join(" · ")}
+	                        ${active &&
+	                        html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+	                          <span className="presence-dot"></span><span className="presence-label">active</span>
+	                        </span>`}
                       </div>
-                      <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
-                        ${canFollow &&
-                        html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
-                          ${followed ? "Unfollow" : "Follow"}
-                        </button>`}
-                        <div className="chip">${s.visibility || "followers"}</div>
-                      </div>
-                    </div>
+	                      <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
+	                        ${canFollow &&
+	                        html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
+	                          ${followLabel}
+	                        </button>`}
+	                        <div className="chip">${s.visibility || "followers"}</div>
+	                      </div>
+	                    </div>
                     <button className="pill icon primary" onClick=${join} aria-label="Join" type="button">
                       <${Icon} name="play" />
                     </button>
@@ -1320,19 +1470,19 @@
                         <span className="presence-dot"></span><span className="presence-label">active</span>
                       </span>`}
                     </div>
-                    <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
-                      <button className="pill" onClick=${() => toggleLike(s.id)} aria-label="Like" type="button">
+	                    <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
+	                      <button className="pill" onClick=${() => toggleLike(s.id)} aria-label="Like" type="button">
                         <span style=${{ display: "inline-flex", marginRight: "8px", opacity: isLiked ? 1 : 0.8 }}>
                           <${Icon} name="heart" />
                         </span>
                         ${isLiked ? "Liked" : "Like"} · ${likeCount}
                       </button>
-                      ${canFollow &&
-                      html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
-                        ${followed ? "Unfollow" : "Follow"}
-                      </button>`}
-                    </div>
-                  </div>
+	                      ${canFollow &&
+	                      html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
+	                        ${followLabel}
+	                      </button>`}
+	                    </div>
+	                  </div>
                   <div style=${{ display: "flex", gap: "10px" }}>
                     ${s.id &&
                     html`<button className="pill icon" onClick=${() => sendToHandle(s.id)} aria-label="Send" type="button">
@@ -1344,16 +1494,20 @@
                   </div>
                 </div>`;
               })}
-              ${(!rows || !rows.length) &&
-              html`<div className="card">
-                <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>
-                  ${mode === "nearby" && !zip ? "Add a zip code in Profile to see nearby sessions." : "No results."}
-                </div>
-              </div>`}
-            </div>
-          </div>`}
-    </div>`;
-  }
+	              ${(!rows || !rows.length) &&
+	              html`<div className="card">
+	                <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>
+	                  ${mode === "nearby" && !zip
+	                    ? "Add a zip code in Profile to see nearby sessions."
+	                    : mode === "live" && liveScope === "near" && (!zip || !zipOptIn)
+	                      ? "Enable Location + add a zip in Profile to see nearby live."
+	                      : "No results."}
+	                </div>
+	              </div>`}
+	            </div>
+	          </div>`}
+	    </div>`;
+	  }
 
   function ProfileScreen({
     theme,
@@ -1452,12 +1606,12 @@
         </div>
       </div>
 
-      <div className="section">
-        <div className="section-head">
-          <div className="section-title">Live</div>
-          <div className="section-note">voice-first (scaffold)</div>
-        </div>
-        <div className="card">
+	      <div className="section">
+	        <div className="section-head">
+	          <div className="section-title">Live</div>
+	          <div className="section-note">voice (beta)</div>
+	        </div>
+	        <div className="card">
           <div className="row" style=${{ justifyContent: "space-between" }}>
             <div className="chip">${myLive?.id ? "Live" : "Offline"}</div>
             ${myLive?.id
@@ -1468,11 +1622,11 @@
           html`<div style=${{ marginTop: "10px", color: "var(--muted)", lineHeight: 1.45 }}>
             Room: <b>${myLive.room_name}</b>
           </div>`}
-          <div style=${{ marginTop: "10px", color: "var(--muted)", lineHeight: 1.45 }}>
-            Streaming implementation is next: mic audio + realtime events, with an SFU provider behind Edge Functions.
-          </div>
-        </div>
-      </div>
+	          <div style=${{ marginTop: "10px", color: "var(--muted)", lineHeight: 1.45 }}>
+	            Voice streaming works today via WebRTC P2P. Next: scale with an SFU provider behind Edge Functions.
+	          </div>
+	        </div>
+	      </div>
 
       <div className="section">
         <div className="section-head">
@@ -1868,16 +2022,17 @@
         ? html`<${FindScreen} tracks=${SAMPLE_TRACKS} onAddTrack=${onAddTrack} />`
         : tab === "builder"
         ? html`<${BuilderScreen} segments=${segments} setSegments=${setSegments} toast=${show} />`
-        : tab === "sessions"
-        ? html`<${SessionsScreen}
-            supabase=${supabase}
-            supabaseSession=${supabaseSession}
-            authHeaders=${authHeaders}
-            zip=${zip}
-            likes=${likeSet}
-            toggleLike=${toggleLike}
-            onLoad=${onLoadSession}
-            toast=${show}
+	        : tab === "sessions"
+	        ? html`<${SessionsScreen}
+	            supabase=${supabase}
+	            supabaseSession=${supabaseSession}
+	            authHeaders=${authHeaders}
+	            zip=${zip}
+	            zipOptIn=${zipOptIn}
+	            likes=${likeSet}
+	            toggleLike=${toggleLike}
+	            onLoad=${onLoadSession}
+	            toast=${show}
           />`
         : html`<${ProfileScreen}
             theme=${theme}
