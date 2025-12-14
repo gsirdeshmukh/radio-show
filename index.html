@@ -152,6 +152,33 @@
       <button id="supabase-signout" class="ghost small" disabled>Sign Out</button>
       <span class="hint" id="supabase-auth-status">supabase: signed out</span>
     </div>
+
+    <div class="divider"></div>
+    <div class="subhead">Profile</div>
+    <label class="field">
+      <span>Handle</span>
+      <input id="profile-handle" type="text" placeholder="handle (public)" autocomplete="off" />
+    </label>
+    <div class="row wrap">
+      <label class="field small">
+        <span>Zip</span>
+        <input id="profile-zip" type="text" placeholder="10001" autocomplete="postal-code" />
+      </label>
+      <label class="field small">
+        <span>Location opt-in</span>
+        <input id="profile-location-optin" type="checkbox" />
+      </label>
+      <button id="profile-save-btn" class="ghost small">Save Profile</button>
+    </div>
+
+    <div class="subhead">Follow</div>
+    <div class="row wrap">
+      <label class="field">
+        <span>Follow handle</span>
+        <input id="follow-handle" type="text" placeholder="@someone" autocomplete="off" />
+      </label>
+      <button id="follow-btn" class="ghost small">Follow</button>
+    </div>
   </section>
 
   <main class="workspace">
@@ -162,6 +189,13 @@
       </div>
       <div class="row wrap">
         <input id="sessions-search" type="text" placeholder="Search sessions" />
+        <select id="sessions-feed">
+          <option value="public">Public</option>
+          <option value="following">Following</option>
+          <option value="nearby">Nearby</option>
+          <option value="inbox">Inbox</option>
+          <option value="live">Live</option>
+        </select>
         <select id="sessions-sort">
           <option value="new">Newest</option>
           <option value="plays">Most plays</option>
@@ -169,6 +203,8 @@
           <option value="likes">Most likes</option>
         </select>
         <button id="sessions-refresh" class="ghost small">Refresh</button>
+        <button id="go-live-btn" class="ghost small">Go Live</button>
+        <button id="end-live-btn" class="ghost small" disabled>End Live</button>
       </div>
       <ul id="sessions-list" class="list"></ul>
     </section>
@@ -232,6 +268,23 @@
         <label class="field small">
           <span>Multi-seed recs</span>
           <input id="multi-seed" type="checkbox" />
+        </label>
+        <label class="field small">
+          <span>Visibility</span>
+          <select id="session-visibility">
+            <option value="public">Public</option>
+            <option value="unlisted">Unlisted</option>
+            <option value="followers">Followers</option>
+            <option value="friends">Friends</option>
+          </select>
+        </label>
+        <label class="field small">
+          <span>Zip</span>
+          <input id="session-zip" type="text" placeholder="optional" autocomplete="postal-code" />
+        </label>
+        <label class="field small">
+          <span>Nearby</span>
+          <input id="session-location-optin" type="checkbox" />
         </label>
       </div>
       <div class="row wrap">

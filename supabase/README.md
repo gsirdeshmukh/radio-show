@@ -21,6 +21,9 @@ supabase functions deploy list_sessions
 supabase functions deploy get_session
 supabase functions deploy record_event
 supabase functions deploy sync_spotify_profile
+supabase functions deploy start_live
+supabase functions deploy end_live
+supabase functions deploy list_live
 ```
 These functions are intended to be callable from the public frontend. Ensure JWT verification is disabled when deploying (either keep `verify_jwt = false` in each `supabase/functions/*/config.toml` or pass `--no-verify-jwt` to `supabase functions deploy`).
 
@@ -30,9 +33,16 @@ Apply `supabase/schema.sql` in the SQL editor or `supabase db push`.
 Key tables:
 - `profiles` — user profile row keyed by Supabase auth `user_id`.
 - `spotify_profiles` — snapshot of Spotify `/me`.
+- `follows` — follower graph (friends = mutual follow).
 - `sessions` — metadata + storage pointer to session JSON.
+- `session_locations` — optional per-session zip (public only if opted-in).
 - `session_assets` — optional stored audio asset rows.
 - `session_stats` — counters (plays/downloads/likes).
+- `profile_locations` — per-user zip (private by default).
+- `profile_presence` — last-seen (visible to self + followers/friends).
+- `inbox_items` — direct session shares (sender/receiver only).
+- `live_sessions` — live session discovery + lifecycle (streaming provider is a placeholder).
+- `live_events` — event stream for live sessions (chat/now-playing/etc; scaffolding).
 
 ## Frontend configuration
 - In the builder Connect panel, paste `Supabase URL` + `anon/public key` (stored in localStorage).

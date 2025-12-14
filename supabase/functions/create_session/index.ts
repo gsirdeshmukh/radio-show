@@ -5,6 +5,7 @@ const supabaseUrl = Deno.env.get("PROJECT_URL") || Deno.env.get("SUPABASE_URL")!
 const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const sessionBucket = Deno.env.get("SESSION_BUCKET") || "sessions";
 const allowAnonCreate = (Deno.env.get("ALLOW_ANON_CREATE") || "true").toLowerCase() === "true";
+const allowedVisibilities = new Set(["public", "unlisted", "followers", "friends"]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,13 +64,25 @@ serve(async (req) => {
     duration_ms: payload.meta.duration_ms || null,
     track_count: payload.segments.length,
     cover_url: payload.meta.cover_url || null,
-    visibility: payload.meta.visibility || "public",
+    visibility: allowedVisibilities.has(payload.meta.visibility) ? payload.meta.visibility : "public",
     storage_path: storagePath,
   };
 
   const { error: insertError } = await supabase.from("sessions").insert(meta);
   if (insertError) {
     return new Response(insertError.message, { status: 500, headers: corsHeaders });
+  }
+
+  // Optional location: store zip but only expose publicly when opted-in.
+  try {
+    const rawZip = typeof payload.meta?.location_zip === "string" ? payload.meta.location_zip.trim() : "";
+    const zip = rawZip || null;
+    const optIn = !!payload.meta?.location_opt_in && !!zip;
+    if (zip) {
+      await supabase.from("session_locations").upsert({ session_id: sessionId, zip, opt_in: optIn });
+    }
+  } catch (err) {
+    console.warn("session location upsert failed", err);
   }
 
   // Seed stats row

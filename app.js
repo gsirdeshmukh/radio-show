@@ -22,6 +22,9 @@
 	  const SUPABASE_URL_KEY = "rs_supabase_url";
 	  const SUPABASE_ANON_KEY = "rs_supabase_anon";
 	  const LIKED_SESSIONS_KEY = "rs_liked_sessions";
+	  const PROFILE_HANDLE_KEY = "rs_profile_handle";
+	  const PROFILE_ZIP_KEY = "rs_profile_zip";
+	  const PROFILE_ZIP_OPTIN_KEY = "rs_profile_zip_optin";
 
 	  const state = {
 	    token: "",
@@ -64,9 +67,20 @@
 		    sessions: [],
 		    sessionsQuery: "",
 		    sessionsSort: "new",
+		    sessionsFeed: "public",
 		    sessionsLoading: false,
 		    sessionsSearchTimer: null,
 		    sessionsStatsChannel: null,
+		    supabaseAuthed: false,
+		    following: new Set(),
+		    presence: new Map(),
+		    presenceTimer: null,
+		    inbox: [],
+		    inboxLoading: false,
+		    inboxChannel: null,
+		    live: [],
+		    liveLoading: false,
+		    currentLive: null,
     likedSessions: new Set(),
     currentSessionId: null,
     appleMusic: {
@@ -169,12 +183,24 @@
     dom.scLikesBtn = document.getElementById("soundcloud-likes-btn");
 		    dom.profileAvatar = document.getElementById("profile-avatar");
 		    dom.profileName = document.getElementById("profile-name");
-		    dom.sessionsPanel = document.getElementById("sessions-panel");
+	    dom.sessionsPanel = document.getElementById("sessions-panel");
 		    dom.sessionsList = document.getElementById("sessions-list");
 		    dom.sessionsSearch = document.getElementById("sessions-search");
+		    dom.sessionsFeed = document.getElementById("sessions-feed");
 		    dom.sessionsSort = document.getElementById("sessions-sort");
 		    dom.sessionsRefresh = document.getElementById("sessions-refresh");
 		    dom.sessionsStatus = document.getElementById("sessions-status");
+		    dom.goLiveBtn = document.getElementById("go-live-btn");
+		    dom.endLiveBtn = document.getElementById("end-live-btn");
+		    dom.profileHandleInput = document.getElementById("profile-handle");
+		    dom.profileZipInput = document.getElementById("profile-zip");
+		    dom.profileLocationOptIn = document.getElementById("profile-location-optin");
+		    dom.profileSaveBtn = document.getElementById("profile-save-btn");
+		    dom.followHandleInput = document.getElementById("follow-handle");
+		    dom.followBtn = document.getElementById("follow-btn");
+		    dom.sessionVisibility = document.getElementById("session-visibility");
+		    dom.sessionZip = document.getElementById("session-zip");
+		    dom.sessionLocationOptIn = document.getElementById("session-location-optin");
 		  }
 
   function showInlineRecommendations(seedSegment, recs) {
@@ -271,9 +297,16 @@
     if (!dom.sessionDate.value) {
       dom.sessionDate.value = new Date().toISOString().slice(0, 10);
     }
-    [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate].forEach((el) => {
+    [dom.sessionTitle, dom.sessionHost, dom.sessionGenre, dom.sessionDate, dom.sessionZip].forEach((el) => {
+      if (!el) return;
       el.addEventListener("input", persistLocal);
     });
+    if (dom.sessionVisibility) {
+      dom.sessionVisibility.addEventListener("change", persistLocal);
+    }
+    if (dom.sessionLocationOptIn) {
+      dom.sessionLocationOptIn.addEventListener("change", persistLocal);
+    }
     dom.appleAuthBtn?.addEventListener("click", authorizeAppleMusic);
     dom.applePlayBtn?.addEventListener("click", playAppleTestTrack);
 	    dom.masterVolume.addEventListener("input", (e) => {
@@ -319,7 +352,17 @@
 		        loadSupabaseSessions();
 		      });
 		    }
+		    if (dom.sessionsFeed) {
+		      dom.sessionsFeed.addEventListener("change", () => {
+		        state.sessionsFeed = dom.sessionsFeed.value || "public";
+		        loadSupabaseSessions();
+		      });
+		    }
 		    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
+		    dom.goLiveBtn && dom.goLiveBtn.addEventListener("click", startLive);
+		    dom.endLiveBtn && dom.endLiveBtn.addEventListener("click", endLive);
+		    dom.profileSaveBtn && dom.profileSaveBtn.addEventListener("click", saveProfileSettings);
+		    dom.followBtn && dom.followBtn.addEventListener("click", followByHandle);
 		    }
 	    document.addEventListener("keydown", handleHotkeys);
     dom.status &&
@@ -1022,11 +1065,306 @@
 				    }
 				    if (dom.supabaseSignInBtn) dom.supabaseSignInBtn.disabled = authed;
 				    if (dom.supabaseSignOutBtn) dom.supabaseSignOutBtn.disabled = !authed;
+				    const prev = !!state.supabaseAuthed;
+				    state.supabaseAuthed = authed;
+				    if (prev !== authed) {
+				      handleSupabaseAuthedState(authed).catch(() => {});
+				    }
 				  }
 
 			  function getSupabaseAuthHeaders() {
 			    const token = state.supabaseSession?.access_token || "";
 			    return token ? { Authorization: `Bearer ${token}` } : {};
+			  }
+
+			  async function handleSupabaseAuthedState(authed) {
+			    if (!authed) {
+			      stopPresenceHeartbeat();
+			      unsubscribeInbox();
+			      state.following = new Set();
+			      state.presence = new Map();
+			      state.inbox = [];
+			      return;
+			    }
+			    await ensureOwnProfileSettings();
+			    await loadFollowing();
+			    startPresenceHeartbeat();
+			    subscribeInbox();
+			    loadSupabaseSessions();
+			  }
+
+			  function normalizeHandle(raw) {
+			    return String(raw || "")
+			      .trim()
+			      .replace(/^@+/, "")
+			      .toLowerCase()
+			      .replace(/[^a-z0-9_]+/g, "")
+			      .slice(0, 24);
+			  }
+
+			  function hydrateProfileSettingsFromLocal() {
+			    if (dom.profileHandleInput && !dom.profileHandleInput.value) {
+			      dom.profileHandleInput.value = localStorage.getItem(PROFILE_HANDLE_KEY) || "";
+			    }
+			    if (dom.profileZipInput && !dom.profileZipInput.value) {
+			      dom.profileZipInput.value = localStorage.getItem(PROFILE_ZIP_KEY) || "";
+			    }
+			    if (dom.profileLocationOptIn) {
+			      dom.profileLocationOptIn.checked = localStorage.getItem(PROFILE_ZIP_OPTIN_KEY) === "true";
+			    }
+			    if (dom.sessionZip && !dom.sessionZip.value) {
+			      dom.sessionZip.value = localStorage.getItem(PROFILE_ZIP_KEY) || "";
+			    }
+			  }
+
+			  async function ensureOwnProfileSettings() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) return;
+
+			    try {
+			      const { data: profile } = await client.from("profiles").select("handle").eq("user_id", uid).maybeSingle();
+			      const handle = profile?.handle || "";
+			      if (handle) {
+			        localStorage.setItem(PROFILE_HANDLE_KEY, handle);
+			        if (dom.profileHandleInput) dom.profileHandleInput.value = handle;
+			      }
+			    } catch {
+			      // ignore
+			    }
+
+			    try {
+			      const { data: loc } = await client
+			        .from("profile_locations")
+			        .select("zip, opt_in")
+			        .eq("user_id", uid)
+			        .maybeSingle();
+			      const zip = (loc?.zip || "").trim();
+			      if (zip) {
+			        localStorage.setItem(PROFILE_ZIP_KEY, zip);
+			        if (dom.profileZipInput) dom.profileZipInput.value = zip;
+			        if (dom.sessionZip && !dom.sessionZip.value) dom.sessionZip.value = zip;
+			      }
+			      if (typeof loc?.opt_in === "boolean") {
+			        localStorage.setItem(PROFILE_ZIP_OPTIN_KEY, loc.opt_in ? "true" : "false");
+			        if (dom.profileLocationOptIn) dom.profileLocationOptIn.checked = loc.opt_in;
+			      }
+			    } catch {
+			      // ignore
+			    }
+			  }
+
+			  async function saveProfileSettings() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      alert("Sign in with Supabase to save profile settings.");
+			      return;
+			    }
+			    const handle = normalizeHandle(dom.profileHandleInput?.value || "");
+			    const zip = String(dom.profileZipInput?.value || "").trim();
+			    const optIn = !!dom.profileLocationOptIn?.checked;
+			    try {
+			      if (handle) {
+			        const { error } = await client.from("profiles").upsert({ user_id: uid, handle });
+			        if (error) throw error;
+			        localStorage.setItem(PROFILE_HANDLE_KEY, handle);
+			      }
+			      await client.from("profile_locations").upsert({ user_id: uid, zip: zip || null, opt_in: optIn });
+			      if (zip) localStorage.setItem(PROFILE_ZIP_KEY, zip);
+			      localStorage.setItem(PROFILE_ZIP_OPTIN_KEY, optIn ? "true" : "false");
+			      alert("Profile saved.");
+			      loadSupabaseSessions();
+			    } catch (err) {
+			      console.warn("profile save failed", err);
+			      alert(`Could not save profile: ${err?.message || "unknown error"}`);
+			    }
+			  }
+
+			  async function loadFollowing() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      state.following = new Set();
+			      return;
+			    }
+			    try {
+			      const { data, error } = await client.from("follows").select("followed_id").eq("follower_id", uid).limit(5000);
+			      if (error) throw error;
+			      state.following = new Set((data || []).map((r) => r.followed_id).filter(Boolean));
+			    } catch (err) {
+			      console.warn("loadFollowing failed", err);
+			      state.following = new Set();
+			    }
+			  }
+
+			  async function followByHandle() {
+			    const raw = String(dom.followHandleInput?.value || "").trim();
+			    const handle = normalizeHandle(raw);
+			    if (!handle) {
+			      alert("Enter a handle like @someone");
+			      return;
+			    }
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      alert("Sign in with Supabase to follow.");
+			      return;
+			    }
+			    try {
+			      const { data, error } = await client.from("profiles").select("user_id, handle").eq("handle", handle).maybeSingle();
+			      if (error) throw error;
+			      const targetId = data?.user_id || "";
+			      if (!targetId) throw new Error("Handle not found");
+			      await followUserId(targetId);
+			      alert(`Following @${handle}`);
+			      dom.followHandleInput.value = "";
+			    } catch (err) {
+			      console.warn("followByHandle failed", err);
+			      alert(`Could not follow: ${err?.message || "unknown error"}`);
+			    }
+			  }
+
+			  async function followUserId(targetUserId) {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid || !targetUserId || targetUserId === uid) return;
+			    if (state.following.has(targetUserId)) return;
+			    const { error } = await client.from("follows").insert({ follower_id: uid, followed_id: targetUserId });
+			    if (error) throw error;
+			    state.following.add(targetUserId);
+			  }
+
+			  async function unfollowUserId(targetUserId) {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid || !targetUserId || targetUserId === uid) return;
+			    const { error } = await client.from("follows").delete().eq("follower_id", uid).eq("followed_id", targetUserId);
+			    if (error) throw error;
+			    state.following.delete(targetUserId);
+			  }
+
+			  async function sendSessionToHandle(sessionId) {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      alert("Sign in with Supabase to send.");
+			      return;
+			    }
+			    const raw = prompt("Send to handle (e.g. @someone):") || "";
+			    const handle = normalizeHandle(raw);
+			    if (!handle) return;
+			    const note = (prompt("Optional note:") || "").trim();
+			    try {
+			      const { data, error } = await client.from("profiles").select("user_id, handle").eq("handle", handle).maybeSingle();
+			      if (error) throw error;
+			      const toUserId = data?.user_id || "";
+			      if (!toUserId) throw new Error("Handle not found");
+			      const { error: insErr } = await client.from("inbox_items").insert({
+			        from_user_id: uid,
+			        to_user_id: toUserId,
+			        session_id: sessionId,
+			        note: note || null,
+			        status: "unread",
+			      });
+			      if (insErr) throw insErr;
+			      alert(`Sent to @${handle}`);
+			    } catch (err) {
+			      console.warn("sendSessionToHandle failed", err);
+			      alert(`Could not send: ${err?.message || "unknown error"}`);
+			    }
+			  }
+
+			  function isPresenceActive(row) {
+			    if (!row?.last_seen_at) return false;
+			    const last = Date.parse(row.last_seen_at);
+			    if (!Number.isFinite(last)) return false;
+			    return Date.now() - last < 70_000;
+			  }
+
+			  async function refreshPresenceForSessions() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      state.presence = new Map();
+			      return;
+			    }
+			    const hostIds = Array.from(new Set((state.sessions || []).map((s) => s?.host_user_id).filter(Boolean)));
+			    if (!hostIds.length) return;
+			    try {
+			      const { data, error } = await client
+			        .from("profile_presence")
+			        .select("user_id, last_seen_at, status")
+			        .in("user_id", hostIds);
+			      if (error) throw error;
+			      state.presence = new Map((data || []).map((r) => [r.user_id, r]));
+			    } catch (err) {
+			      console.warn("presence fetch failed", err);
+			      state.presence = new Map();
+			    }
+			  }
+
+			  async function upsertPresence({ offline } = { offline: false }) {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) return;
+			    const status = offline ? "offline" : "online";
+			    try {
+			      await client.from("profile_presence").upsert({
+			        user_id: uid,
+			        last_seen_at: new Date().toISOString(),
+			        status,
+			      });
+			    } catch (err) {
+			      console.warn("presence upsert failed", err);
+			    }
+			  }
+
+			  function startPresenceHeartbeat() {
+			    stopPresenceHeartbeat();
+			    upsertPresence().catch(() => {});
+			    state.presenceTimer = setInterval(() => upsertPresence().catch(() => {}), 30_000);
+			  }
+
+			  function stopPresenceHeartbeat() {
+			    if (state.presenceTimer) {
+			      clearInterval(state.presenceTimer);
+			      state.presenceTimer = null;
+			    }
+			    upsertPresence({ offline: true }).catch(() => {});
+			  }
+
+			  function unsubscribeInbox() {
+			    if (state.inboxChannel) {
+			      try {
+			        state.inboxChannel.unsubscribe().catch(() => {});
+			      } catch {
+			        // ignore
+			      }
+			      state.inboxChannel = null;
+			    }
+			  }
+
+			  function subscribeInbox() {
+			    unsubscribeInbox();
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) return;
+			    try {
+			      state.inboxChannel = client
+			        .channel("rs-inbox")
+			        .on(
+			          "postgres_changes",
+			          { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${uid}` },
+			          () => {
+			            if (state.sessionsFeed === "inbox") loadSupabaseSessions();
+			          },
+			        )
+			        .subscribe();
+			    } catch (err) {
+			      console.warn("inbox subscribe failed", err);
+			      state.inboxChannel = null;
+			    }
 			  }
 
 				  async function supabaseSignIn() {
@@ -1230,11 +1568,33 @@
 		    state.sessionsLoading = true;
 		    setSessionsStatus("Loading…");
 		    try {
+		      const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+		      const authed = !!state.supabaseSession?.user?.id;
+		      if (dom.goLiveBtn) dom.goLiveBtn.disabled = feed !== "live" || !authed;
+		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = feed !== "live" || !authed || !state.currentLive?.id;
 		      const sortKey = state.sessionsSort || dom.sessionsSort?.value || "new";
 		      const q = state.sessionsQuery || (dom.sessionsSearch?.value || "").trim() || null;
+
+		      if (feed === "inbox") {
+		        await loadSupabaseInbox();
+		        return;
+		      }
+		      if (feed === "following") {
+		        await loadFollowingSessions({ q, sortKey });
+		        return;
+		      }
+		      if (feed === "live") {
+		        await loadSupabaseLive();
+		        return;
+		      }
+
 		      const functionSort = sortKey === "plays" ? "trending" : sortKey === "downloads" ? "top" : "new";
+		      const zip =
+		        feed === "nearby"
+		          ? String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim() || null
+		          : null;
 		      const { data, error } = await client.functions.invoke("list_sessions", {
-		        body: { q, sort: functionSort, limit: 50 },
+		        body: { q, sort: functionSort, limit: 50, zip },
 		      });
 		      if (error) throw error;
 	      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
@@ -1242,8 +1602,9 @@
 	        sortKey === "likes"
 	          ? sessions.slice().sort((a, b) => (b.likes || 0) - (a.likes || 0))
 	          : sessions;
+	      await refreshPresenceForSessions();
 	      renderSupabaseSessions();
-	      setSessionsStatus(`${state.sessions.length} sessions`);
+	      setSessionsStatus(`${state.sessions.length} sessions${feed === "nearby" && zip ? ` · near ${zip}` : ""}`);
 	    } catch (err) {
 	      console.warn("Supabase sessions fetch failed", err);
 	      state.sessions = [];
@@ -1253,6 +1614,300 @@
 	      state.sessionsLoading = false;
 	    }
 	  }
+
+		  async function loadFollowingSessions({ q, sortKey }) {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) {
+		      state.sessions = [];
+		      renderSupabaseSessions();
+		      setSessionsStatus("Sign in to view Following");
+		      return;
+		    }
+		    await loadFollowing();
+		    const ids = Array.from(state.following || []);
+		    if (!ids.length) {
+		      state.sessions = [];
+		      renderSupabaseSessions();
+		      setSessionsStatus("Following feed is empty — follow someone first");
+		      return;
+		    }
+		    try {
+		      let query = client
+		        .from("sessions")
+		        .select(
+		          "id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, visibility, created_at, session_stats(plays, downloads, likes)",
+		        )
+		        .in("host_user_id", ids)
+		        .order("created_at", { ascending: false })
+		        .limit(50);
+		      if (q) {
+		        const pattern = `%${q}%`;
+		        query = query.or(
+		          [
+		            `title.ilike.${pattern}`,
+		            `host_name.ilike.${pattern}`,
+		            `genre.ilike.${pattern}`,
+		            `tags::text.ilike.${pattern}`,
+		          ].join(","),
+		        );
+		      }
+		      const { data, error } = await query;
+		      if (error) throw error;
+		      const rows = Array.isArray(data) ? data : [];
+		      state.sessions = rows.map((row) => ({
+		        id: row.id,
+		        slug: row.slug,
+		        title: row.title,
+		        host_user_id: row.host_user_id,
+		        host: row.host_name,
+		        genre: row.genre,
+		        tags: row.tags,
+		        cover_url: row.cover_url,
+		        url: row.storage_path,
+		        plays: row.session_stats?.[0]?.plays ?? 0,
+		        downloads: row.session_stats?.[0]?.downloads ?? 0,
+		        likes: row.session_stats?.[0]?.likes ?? 0,
+		        created_at: row.created_at,
+		        visibility: row.visibility,
+		      }));
+		      await refreshPresenceForSessions();
+		      if (sortKey === "likes") state.sessions.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+		      renderSupabaseSessions();
+		      setSessionsStatus(`${state.sessions.length} sessions · following`);
+		    } catch (err) {
+		      console.warn("following feed failed", err);
+		      state.sessions = [];
+		      renderSupabaseSessions();
+		      setSessionsStatus("Failed to load Following");
+		    }
+		  }
+
+		  async function loadSupabaseInbox() {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) {
+		      state.inbox = [];
+		      renderSupabaseInbox();
+		      setSessionsStatus("Sign in to view Inbox");
+		      return;
+		    }
+		    state.inboxLoading = true;
+		    setSessionsStatus("Loading inbox…");
+		    try {
+		      const { data, error } = await client
+		        .from("inbox_items")
+		        .select("id, from_user_id, session_id, note, status, created_at, read_at")
+		        .eq("to_user_id", uid)
+		        .order("created_at", { ascending: false })
+		        .limit(50);
+		      if (error) throw error;
+		      const rows = Array.isArray(data) ? data : [];
+		      const fromIds = Array.from(new Set(rows.map((r) => r.from_user_id).filter(Boolean)));
+		      const senderById = new Map();
+		      if (fromIds.length) {
+		        const { data: senders } = await client.from("profiles").select("user_id, handle, display_name").in("user_id", fromIds);
+		        (senders || []).forEach((p) => senderById.set(p.user_id, p));
+		      }
+		      state.inbox = rows.map((r) => ({ ...r, from: senderById.get(r.from_user_id) || null }));
+		      renderSupabaseInbox();
+		      const unread = state.inbox.filter((x) => x.status === "unread").length;
+		      setSessionsStatus(`${state.inbox.length} inbox items${unread ? ` · ${unread} unread` : ""}`);
+		    } catch (err) {
+		      console.warn("inbox load failed", err);
+		      state.inbox = [];
+		      renderSupabaseInbox();
+		      setSessionsStatus("Failed to load Inbox");
+		    } finally {
+		      state.inboxLoading = false;
+		    }
+		  }
+
+		  async function markInboxRead(itemId) {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid || !itemId) return;
+		    try {
+		      await client
+		        .from("inbox_items")
+		        .update({ status: "read", read_at: new Date().toISOString() })
+		        .eq("id", itemId)
+		        .eq("to_user_id", uid);
+		      const row = (state.inbox || []).find((x) => x.id === itemId);
+		      if (row) {
+		        row.status = "read";
+		        row.read_at = new Date().toISOString();
+		      }
+		      renderSupabaseInbox();
+		    } catch (err) {
+		      console.warn("markInboxRead failed", err);
+		    }
+		  }
+
+		  async function loadSupabaseLive() {
+		    const client = initSupabaseClient();
+		    if (!client) {
+		      state.live = [];
+		      renderSupabaseLive();
+		      setSessionsStatus("Supabase not configured");
+		      return;
+		    }
+		    state.liveLoading = true;
+		    setSessionsStatus("Loading live…");
+		    try {
+		      const zip = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim() || null;
+		      const { data, error } = await client.functions.invoke("list_live", {
+		        headers: getSupabaseAuthHeaders(),
+		        body: { zip, limit: 50 },
+		      });
+		      if (error) throw error;
+		      state.live = Array.isArray(data?.live) ? data.live : [];
+		      const hostIds = Array.from(new Set(state.live.map((l) => l?.host_user_id).filter(Boolean)));
+		      if (hostIds.length) {
+		        const { data: presence } = await client.from("profile_presence").select("user_id, last_seen_at, status").in("user_id", hostIds);
+		        state.presence = new Map((presence || []).map((r) => [r.user_id, r]));
+		      } else {
+		        state.presence = new Map();
+		      }
+		      renderSupabaseLive();
+		      setSessionsStatus(`${state.live.length} live${zip ? ` · near ${zip}` : ""}`);
+		    } catch (err) {
+		      console.warn("live load failed", err);
+		      state.live = [];
+		      renderSupabaseLive();
+		      setSessionsStatus("Failed to load Live");
+		    } finally {
+		      state.liveLoading = false;
+		    }
+		  }
+
+		  function renderSupabaseLive() {
+		    if (!dom.sessionsList) return;
+		    dom.sessionsList.innerHTML = "";
+		    const rows = state.live || [];
+		    if (!rows.length) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = "No live streams right now.";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = "Go Live to create one (voice streaming scaffold is next).";
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      li.appendChild(meta);
+		      dom.sessionsList.appendChild(li);
+		      return;
+		    }
+		    rows.forEach((row) => {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = row.title || "Live";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = [row.host || "Unknown", row.started_at ? new Date(row.started_at).toLocaleString() : null].filter(Boolean).join(" · ");
+		      const presence = row?.host_user_id ? state.presence.get(row.host_user_id) : null;
+		      if (presence && isPresenceActive(presence)) {
+		        const badge = document.createElement("span");
+		        badge.className = "presence";
+		        const dot = document.createElement("span");
+		        dot.className = "presence-dot";
+		        const label = document.createElement("span");
+		        label.className = "presence-label";
+		        label.textContent = "active";
+		        badge.appendChild(dot);
+		        badge.appendChild(label);
+		        sub.appendChild(document.createTextNode(" "));
+		        sub.appendChild(badge);
+		      }
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      const actions = document.createElement("div");
+		      actions.className = "actions";
+		      const joinBtn = document.createElement("button");
+		      joinBtn.type = "button";
+		      joinBtn.textContent = "Join";
+		      joinBtn.addEventListener("click", () => joinLive(row));
+		      actions.appendChild(joinBtn);
+		      li.appendChild(meta);
+		      li.appendChild(actions);
+		      dom.sessionsList.appendChild(li);
+		    });
+		  }
+
+		  function joinLive(row) {
+		    const room = row?.room_name || "";
+		    if (!room) {
+		      alert("No room name on this live session yet.");
+		      return;
+		    }
+		    const msg = `Live join scaffold (voice streaming next):\\nroom: ${room}`;
+		    try {
+		      navigator.clipboard?.writeText(room).catch(() => {});
+		    } catch {
+		      // ignore
+		    }
+		    alert(msg);
+		  }
+
+		  async function startLive() {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) {
+		      alert("Sign in with Supabase to go live.");
+		      return;
+		    }
+		    try {
+		      const allowed = new Set(["public", "followers", "friends"]);
+		      const requested = dom.sessionVisibility?.value || "followers";
+		      const visibility = allowed.has(requested) ? requested : "followers";
+		      const title = String(dom.sessionTitle?.value || "Live").trim() || "Live";
+		      const zip = String(dom.sessionZip?.value || dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim() || null;
+		      const locationOptIn = !!dom.sessionLocationOptIn?.checked && !!zip;
+		      const { data, error } = await client.functions.invoke("start_live", {
+		        headers: getSupabaseAuthHeaders(),
+		        body: { title, visibility, zip, location_opt_in: locationOptIn },
+		      });
+		      if (error) throw error;
+		      state.currentLive = data?.live || null;
+		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = !state.currentLive?.id;
+		      alert(state.currentLive?.room_name ? `You're live. Room: ${state.currentLive.room_name}` : "You're live.");
+		      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
+		    } catch (err) {
+		      console.warn("startLive failed", err);
+		      alert(`Could not start live: ${err?.message || "unknown error"}`);
+		    }
+		  }
+
+		  async function endLive() {
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) return;
+		    const id = state.currentLive?.id || null;
+		    if (!id) {
+		      alert("No active live session.");
+		      return;
+		    }
+		    try {
+		      const { error } = await client.functions.invoke("end_live", {
+		        headers: getSupabaseAuthHeaders(),
+		        body: { id },
+		      });
+		      if (error) throw error;
+		      state.currentLive = null;
+		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = true;
+		      alert("Live ended.");
+		      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
+		    } catch (err) {
+		      console.warn("endLive failed", err);
+		      alert(`Could not end live: ${err?.message || "unknown error"}`);
+		    }
+		  }
 
 	  function renderSupabaseSessions() {
 	    if (!dom.sessionsList) return;
@@ -1286,6 +1941,20 @@
 		      sub.className = "subtitle";
 		      if (row?.id) sub.dataset.sessionId = row.id;
 		      sub.textContent = formatSessionSubtitle(row);
+		      const presence = row?.host_user_id ? state.presence.get(row.host_user_id) : null;
+		      if (presence && isPresenceActive(presence)) {
+		        const badge = document.createElement("span");
+		        badge.className = "presence";
+		        const dot = document.createElement("span");
+		        dot.className = "presence-dot";
+		        const label = document.createElement("span");
+		        label.className = "presence-label";
+		        label.textContent = "active";
+		        badge.appendChild(dot);
+		        badge.appendChild(label);
+		        sub.appendChild(document.createTextNode(" "));
+		        sub.appendChild(badge);
+		      }
 		      meta.appendChild(title);
 		      meta.appendChild(sub);
 		      const actions = document.createElement("div");
@@ -1303,6 +1972,31 @@
 		        likeBtn.addEventListener("click", () => likeSession(row.id));
 		        actions.appendChild(likeBtn);
 		      }
+		      if (row?.host_user_id && row.host_user_id !== (state.supabaseSession?.user?.id || "")) {
+		        const followBtn = document.createElement("button");
+		        followBtn.type = "button";
+		        followBtn.textContent = state.following.has(row.host_user_id) ? "Unfollow" : "Follow";
+		        followBtn.addEventListener("click", async () => {
+		          try {
+		            if (state.following.has(row.host_user_id)) {
+		              await unfollowUserId(row.host_user_id);
+		            } else {
+		              await followUserId(row.host_user_id);
+		            }
+		            followBtn.textContent = state.following.has(row.host_user_id) ? "Unfollow" : "Follow";
+		          } catch (err) {
+		            alert(`Follow failed: ${err?.message || "unknown error"}`);
+		          }
+		        });
+		        actions.appendChild(followBtn);
+		      }
+		      if (row?.id) {
+		        const sendBtn = document.createElement("button");
+		        sendBtn.type = "button";
+		        sendBtn.textContent = "Send";
+		        sendBtn.addEventListener("click", () => sendSessionToHandle(row.id));
+		        actions.appendChild(sendBtn);
+		      }
 		      const loadBtn = document.createElement("button");
 		      loadBtn.textContent = "Load";
 		      loadBtn.addEventListener("click", () => loadSupabaseSession(row));
@@ -1313,6 +2007,64 @@
 	    });
 	  }
 
+		  function renderSupabaseInbox() {
+		    if (!dom.sessionsList) return;
+		    dom.sessionsList.innerHTML = "";
+		    const items = state.inbox || [];
+		    if (!items.length) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      title.textContent = "Inbox is empty.";
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      sub.textContent = "Send a session to a friend to see it here.";
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      li.appendChild(meta);
+		      dom.sessionsList.appendChild(li);
+		      return;
+		    }
+		    items.forEach((item) => {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      const fromHandle = item?.from?.handle ? `@${item.from.handle}` : item?.from?.display_name || "Someone";
+		      title.textContent = item.status === "unread" ? `New from ${fromHandle}` : `From ${fromHandle}`;
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      const when = item?.created_at ? new Date(item.created_at).toLocaleString() : "";
+		      sub.textContent = [item.note || null, when || null, item.session_id ? `session: ${item.session_id.slice(0, 8)}…` : null]
+		        .filter(Boolean)
+		        .join(" · ");
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      const actions = document.createElement("div");
+		      actions.className = "actions";
+		      if (item.session_id) {
+		        const loadBtn = document.createElement("button");
+		        loadBtn.type = "button";
+		        loadBtn.textContent = "Load";
+		        loadBtn.addEventListener("click", () => loadSupabaseSession({ id: item.session_id }));
+		        actions.appendChild(loadBtn);
+		      }
+		      if (item.status === "unread") {
+		        const readBtn = document.createElement("button");
+		        readBtn.type = "button";
+		        readBtn.textContent = "Mark Read";
+		        readBtn.addEventListener("click", () => markInboxRead(item.id));
+		        actions.appendChild(readBtn);
+		      }
+		      li.appendChild(meta);
+		      li.appendChild(actions);
+		      dom.sessionsList.appendChild(li);
+		    });
+		  }
+
 		  async function loadSupabaseSession(entry) {
 		    try {
 		      state.currentSessionId = entry?.id || null;
@@ -1320,6 +2072,7 @@
 		      if (!client) throw new Error("Supabase not configured");
 		      setSessionsStatus("Loading session…");
 		      const { data, error } = await client.functions.invoke("get_session", {
+		        headers: getSupabaseAuthHeaders(),
 		        body: { id: entry?.id || null, slug: entry?.slug || null },
 		      });
 		      if (error) throw error;
@@ -1343,6 +2096,9 @@
 	        dom.sessionHost.value = payload.meta.host || "";
 	        dom.sessionGenre.value = payload.meta.genre || "";
 	        if (payload.meta.date) dom.sessionDate.value = payload.meta.date;
+	        if (dom.sessionVisibility) dom.sessionVisibility.value = payload.meta.visibility || "public";
+	        if (dom.sessionZip) dom.sessionZip.value = (payload.meta.location_zip || payload.meta.zip || "").trim();
+	        if (dom.sessionLocationOptIn) dom.sessionLocationOptIn.checked = !!payload.meta.location_opt_in;
 	      } else {
 	        dom.sessionTitle.value = data?.title || entry?.title || "";
 	        dom.sessionHost.value = data?.host || entry?.host || "";
@@ -1396,6 +2152,7 @@
 		    dom.clientIdInput.value = storedClientId || DEFAULT_CLIENT_ID;
 		    state.clientId = dom.clientIdInput.value;
 		    hydrateSupabaseConfig();
+		    hydrateProfileSettingsFromLocal();
 		    renderSupabaseAuthStatus();
 	    loadSupabaseSessions();
 		    applySavedTheme();
@@ -3161,6 +3918,9 @@
         host: dom.sessionHost.value,
         genre: dom.sessionGenre.value,
         date: dom.sessionDate.value,
+        visibility: dom.sessionVisibility?.value || "public",
+        location_zip: (dom.sessionZip?.value || "").trim() || null,
+        location_opt_in: !!dom.sessionLocationOptIn?.checked,
       },
       segments: state.segments
         .map((s) => {
@@ -3241,6 +4001,9 @@
         dom.sessionHost.value = payload.meta.host || "";
         dom.sessionGenre.value = payload.meta.genre || "";
         if (payload.meta.date) dom.sessionDate.value = payload.meta.date;
+        if (dom.sessionVisibility) dom.sessionVisibility.value = payload.meta.visibility || "public";
+        if (dom.sessionZip) dom.sessionZip.value = (payload.meta.location_zip || payload.meta.zip || "").trim();
+        if (dom.sessionLocationOptIn) dom.sessionLocationOptIn.checked = !!payload.meta.location_opt_in;
       }
       renderSegments();
       alert("Show loaded.");
@@ -3261,15 +4024,18 @@
 
   async function persistLocal() {
     try {
-      localStorage.setItem(
-        "rs_session_meta",
-        JSON.stringify({
-          title: dom.sessionTitle.value,
-          host: dom.sessionHost.value,
-          genre: dom.sessionGenre.value,
-          date: dom.sessionDate.value,
-        })
-      );
+        localStorage.setItem(
+          "rs_session_meta",
+          JSON.stringify({
+            title: dom.sessionTitle.value,
+            host: dom.sessionHost.value,
+            genre: dom.sessionGenre.value,
+            date: dom.sessionDate.value,
+            visibility: dom.sessionVisibility?.value || "public",
+            location_zip: (dom.sessionZip?.value || "").trim() || null,
+            location_opt_in: !!dom.sessionLocationOptIn?.checked,
+          })
+        );
       const data = await Promise.all(
         state.segments.map(async (s) => {
           const overlays = Array.isArray(s.overlays)
@@ -3401,6 +4167,9 @@
         dom.sessionHost.value = meta.host || "";
         dom.sessionGenre.value = meta.genre || "";
         if (meta.date) dom.sessionDate.value = meta.date;
+        if (dom.sessionVisibility) dom.sessionVisibility.value = meta.visibility || "public";
+        if (dom.sessionZip) dom.sessionZip.value = (meta.location_zip || "").trim();
+        if (dom.sessionLocationOptIn) dom.sessionLocationOptIn.checked = !!meta.location_opt_in;
       }
     } catch {
       // ignore

@@ -482,6 +482,16 @@ input[type="number"] {
   width: 100%;
 }
 
+select {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--grid);
+  padding: 11px 12px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+}
+
 input[type="text"]::placeholder,
 input[type="password"]::placeholder {
   color: rgba(233, 243, 255, 0.5);
@@ -612,6 +622,32 @@ button:hover:not(:disabled) {
 .list .subtitle {
   color: var(--muted);
   font-size: 12px;
+}
+
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(46, 255, 146, 0.95);
+  box-shadow: 0 0 0 4px rgba(46, 255, 146, 0.12);
+}
+
+.presence-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(46, 255, 146, 0.95);
+}
+
+.presence-dot.idle {
+  background: rgba(233, 243, 255, 0.28);
+  box-shadow: none;
 }
 
 .list .actions {

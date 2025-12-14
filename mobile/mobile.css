@@ -364,6 +364,21 @@ html[data-theme="light"] .chip {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(48, 209, 88, 0.96);
+  box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.14);
+}
+
+.presence-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(48, 209, 88, 0.96);
+}
+
 .field {
   display: flex;
   align-items: center;

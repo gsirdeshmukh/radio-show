@@ -26,19 +26,47 @@ serve(async (req) => {
   const tag: string | null = body.tag || null;
   const genre: string | null = body.genre || null;
   const hostUserId: string | null = body.host_user_id || null;
+  const nearZipRaw: string | null = body.zip || body.near_zip || null;
+  const nearZip = typeof nearZipRaw === "string" ? nearZipRaw.trim() : null;
   const sort = body.sort || "new"; // new | top | trending
   const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 100);
   const offset = Math.max(Number(body.offset) || 0, 0);
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  let sessionIds: string[] | null = null;
+  if (nearZip) {
+    const { data: locs, error: locErr } = await supabase
+      .from("session_locations")
+      .select("session_id")
+      .eq("zip", nearZip)
+      .eq("opt_in", true)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (locErr) {
+      return new Response(locErr.message, { status: 500, headers: corsHeaders });
+    }
+    sessionIds = (locs || []).map((x: any) => x?.session_id).filter(Boolean);
+    if (!sessionIds.length) {
+      return new Response(JSON.stringify({ sessions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+  }
+
   let query = supabase
     .from("sessions")
-    .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
+    .select(
+      "id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes), session_locations(zip, opt_in)",
+    )
     .eq("visibility", "public");
 
   if (hostUserId) {
     query = query.eq("host_user_id", hostUserId);
+  }
+  if (sessionIds) {
+    query = query.in("id", sessionIds);
   }
   if (q) {
     const pattern = `%${q}%`;
@@ -80,6 +108,7 @@ serve(async (req) => {
     tags: row.tags,
     cover_url: row.cover_url,
     url: row.storage_path,
+    zip: Array.isArray(row.session_locations) ? (row.session_locations?.[0]?.opt_in ? row.session_locations?.[0]?.zip : null) : row.session_locations?.opt_in ? row.session_locations?.zip : null,
     plays: row.session_stats?.[0]?.plays ?? 0,
     downloads: row.session_stats?.[0]?.downloads ?? 0,
     likes: row.session_stats?.[0]?.likes ?? 0,
