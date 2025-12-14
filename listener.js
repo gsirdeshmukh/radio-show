@@ -1093,6 +1093,10 @@
 		        await loadFollowingSessions({ q, sortKey });
 		        return;
 		      }
+		      if (feed === "friends") {
+		        await loadFriendsSessions({ q, sortKey });
+		        return;
+		      }
 		      if (feed === "live" || feed === "live_nearby") {
 		        await loadSupabaseLive({ near: feed === "live_nearby" });
 		        return;
@@ -1197,6 +1201,73 @@
 	      state.sessions = [];
 	      renderSupabaseSessions();
 	      setSessionsStatus("Failed to load Following");
+	    }
+	  }
+
+	  async function loadFriendsSessions({ q, sortKey }) {
+	    const client = initSupabaseClient();
+	    const uid = state.supabaseSession?.user?.id || "";
+	    if (!client || !uid) {
+	      state.sessions = [];
+	      renderSupabaseSessions();
+	      setSessionsStatus("Sign in to view Friends");
+	      return;
+	    }
+	    await loadFollowing();
+	    await loadFollowers();
+	    const ids = Array.from(state.following || []).filter((id) => state.followers.has(id));
+	    if (!ids.length) {
+	      state.sessions = [];
+	      renderSupabaseSessions();
+	      setSessionsStatus("Friends feed is empty — mutual follows appear here");
+	      return;
+	    }
+	    try {
+	      let query = client
+	        .from("sessions")
+	        .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, visibility, created_at, session_stats(plays, downloads, likes)")
+	        .in("host_user_id", ids)
+	        .order("created_at", { ascending: false })
+	        .limit(50);
+	      if (q) {
+	        const pattern = `%${q}%`;
+	        query = query.or(
+	          [
+	            `title.ilike.${pattern}`,
+	            `host_name.ilike.${pattern}`,
+	            `genre.ilike.${pattern}`,
+	            `tags::text.ilike.${pattern}`,
+	          ].join(","),
+	        );
+	      }
+	      const { data, error } = await query;
+	      if (error) throw error;
+	      const rows = Array.isArray(data) ? data : [];
+	      state.sessions = rows.map((row) => ({
+	        id: row.id,
+	        slug: row.slug,
+	        title: row.title,
+	        host_user_id: row.host_user_id,
+	        host: row.host_name,
+	        genre: row.genre,
+	        tags: row.tags,
+	        cover_url: row.cover_url,
+	        url: row.storage_path,
+	        plays: row.session_stats?.[0]?.plays ?? 0,
+	        downloads: row.session_stats?.[0]?.downloads ?? 0,
+	        likes: row.session_stats?.[0]?.likes ?? 0,
+	        created_at: row.created_at,
+	        visibility: row.visibility,
+	      }));
+	      await refreshPresenceForSessions();
+	      if (sortKey === "likes") state.sessions.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+	      renderSupabaseSessions();
+	      setSessionsStatus(`${state.sessions.length} sessions · friends`);
+	    } catch (err) {
+	      console.warn("friends feed failed", err);
+	      state.sessions = [];
+	      renderSupabaseSessions();
+	      setSessionsStatus("Failed to load Friends");
 	    }
 	  }
 

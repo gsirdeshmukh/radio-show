@@ -1054,6 +1054,7 @@
 		  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, zipOptIn, likes, toggleLike, onLoad, toast }) {
 		    const [mode, setMode] = useState("new");
 		    const [liveScope, setLiveScope] = useState("all");
+		    const [followScope, setFollowScope] = useState("following");
 		    const [q, setQ] = useState("");
 		    const [rows, setRows] = useState(SAMPLE_SESSIONS);
 		    const [liveRoom, setLiveRoom] = useState(null);
@@ -1191,13 +1192,18 @@
             return;
           }
 
-          if (mode === "following") {
-            const ids = await loadFollowing();
-            if (!ids.length) {
-              if (!ignore) setRows([]);
-              if (!ignore) setPresence(new Map());
-              return;
-            }
+	          if (mode === "following") {
+	            let ids = await loadFollowing();
+	            if (followScope === "friends") {
+	              const rev = await loadFollowers();
+	              const revSet = new Set(rev);
+	              ids = ids.filter((id) => revSet.has(id));
+	            }
+	            if (!ids.length) {
+	              if (!ignore) setRows([]);
+	              if (!ignore) setPresence(new Map());
+	              return;
+	            }
             let qy = supabase
               .from("sessions")
               .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
@@ -1267,7 +1273,7 @@
 	      return () => {
 	        ignore = true;
 	      };
-	    }, [supabase, userId, mode, liveScope, q, zip, zipOptIn]);
+	    }, [supabase, userId, mode, liveScope, followScope, q, zip, zipOptIn]);
 
 	    const toggleFollow = async (targetUserId) => {
 	      if (!supabase || !userId) {
@@ -1375,21 +1381,33 @@
 	        </div>
 	      </div>
 
-	      ${mode === "live" &&
-	      html`<div className="section" style=${{ marginTop: "-8px" }}>
-	        <${Segmented}
-	          options=${[
-	            { label: "All", value: "all" },
-	            { label: zip ? `Near ${zip}` : "Near", value: "near" },
-	          ]}
-	          value=${liveScope}
-	          onChange=${setLiveScope}
-	        />
-	      </div>`}
+		      ${mode === "live" &&
+		      html`<div className="section" style=${{ marginTop: "-8px" }}>
+		        <${Segmented}
+		          options=${[
+		            { label: "All", value: "all" },
+		            { label: zip ? `Near ${zip}` : "Near", value: "near" },
+		          ]}
+		          value=${liveScope}
+		          onChange=${setLiveScope}
+		        />
+		      </div>`}
 
-	      ${mode === "inbox"
-	        ? html`<div className="section">
-	            <div className="list">
+		      ${mode === "following" &&
+		      html`<div className="section" style=${{ marginTop: "-8px" }}>
+		        <${Segmented}
+		          options=${[
+		            { label: "Following", value: "following" },
+		            { label: "Friends", value: "friends" },
+		          ]}
+		          value=${followScope}
+		          onChange=${setFollowScope}
+		        />
+		      </div>`}
+
+		      ${mode === "inbox"
+		        ? html`<div className="section">
+		            <div className="list">
               ${(inbox || []).map((it) => {
                 const from = it?.from?.handle ? `@${it.from.handle}` : it?.from?.display_name || "Someone";
                 return html`<div className="item">
