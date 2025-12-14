@@ -52,6 +52,8 @@
 		    liveRoomEvents: [],
 		    liveRoomProfiles: new Map(),
 		    liveRoomChannel: null,
+		    liveRtc: null,
+		    liveRtcProcessed: new Set(),
 		    currentSessionId: null,
 		    likedSessions: new Set(),
 		  };
@@ -117,11 +119,15 @@
     dom.liveRoom = document.getElementById("live-room");
     dom.liveRoomTitle = document.getElementById("live-room-title");
     dom.liveRoomSubtitle = document.getElementById("live-room-subtitle");
-    dom.liveRoomClose = document.getElementById("live-room-close");
-    dom.liveRoomEvents = document.getElementById("live-room-events");
-    dom.liveRoomMessage = document.getElementById("live-room-message");
-    dom.liveRoomSend = document.getElementById("live-room-send");
-    dom.barCover = document.getElementById("bar-cover");
+	    dom.liveRoomClose = document.getElementById("live-room-close");
+	    dom.liveRoomEvents = document.getElementById("live-room-events");
+	    dom.liveRoomMessage = document.getElementById("live-room-message");
+	    dom.liveRoomSend = document.getElementById("live-room-send");
+	    dom.liveRoomAudioBtn = document.getElementById("live-room-audio-btn");
+	    dom.liveRoomMicBtn = document.getElementById("live-room-mic-btn");
+	    dom.liveRoomAudioStatus = document.getElementById("live-room-audio-status");
+	    dom.liveRoomAudioEl = document.getElementById("live-room-audio");
+	    dom.barCover = document.getElementById("bar-cover");
     dom.barTitle = document.getElementById("bar-title");
     dom.barSubtitle = document.getElementById("bar-subtitle");
     dom.barPlay = document.getElementById("bar-play");
@@ -450,12 +456,14 @@
 	    }
 	    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
 	    dom.goLiveBtn && dom.goLiveBtn.addEventListener("click", startLive);
-	    dom.endLiveBtn && dom.endLiveBtn.addEventListener("click", endLive);
-	    dom.liveRoomClose && dom.liveRoomClose.addEventListener("click", closeLiveRoom);
-	    dom.liveRoomSend && dom.liveRoomSend.addEventListener("click", sendLiveRoomChat);
-	    if (dom.liveRoomMessage) {
-	      dom.liveRoomMessage.addEventListener("keydown", (e) => {
-	        if (e.key === "Enter") {
+		    dom.endLiveBtn && dom.endLiveBtn.addEventListener("click", endLive);
+		    dom.liveRoomClose && dom.liveRoomClose.addEventListener("click", closeLiveRoom);
+		    dom.liveRoomSend && dom.liveRoomSend.addEventListener("click", sendLiveRoomChat);
+		    dom.liveRoomAudioBtn && dom.liveRoomAudioBtn.addEventListener("click", toggleLiveAudio);
+		    dom.liveRoomMicBtn && dom.liveRoomMicBtn.addEventListener("click", toggleLiveMic);
+		    if (dom.liveRoomMessage) {
+		      dom.liveRoomMessage.addEventListener("keydown", (e) => {
+		        if (e.key === "Enter") {
 	          e.preventDefault();
 	          sendLiveRoomChat();
 	        }
@@ -1237,51 +1245,420 @@
 		    });
 		  }
 
-		  function openLiveRoom(row) {
-		    if (!row?.id) {
-		      alert("No live session id.");
-		      return;
-		    }
-		    state.liveRoom = row;
-		    state.liveRoomEvents = [];
-		    state.liveRoomProfiles = new Map();
-			    if (dom.liveRoomMessage) dom.liveRoomMessage.value = "";
-			    if (dom.liveRoom) dom.liveRoom.classList.remove("collapsed");
-			    renderLiveRoom();
-			    renderLiveRoomEvents({ scrollToBottom: false });
-			    loadLiveRoomEvents(row.id).catch(() => {});
-			    subscribeLiveRoom(row.id);
+			  function openLiveRoom(row) {
+			    if (!row?.id) {
+			      alert("No live session id.");
+			      return;
+			    }
+			    resetLiveRtc();
+			    state.liveRtcProcessed = new Set();
+			    state.liveRoom = row;
+			    state.liveRoomEvents = [];
+			    state.liveRoomProfiles = new Map();
+				    if (dom.liveRoomMessage) dom.liveRoomMessage.value = "";
+				    if (dom.liveRoom) dom.liveRoom.classList.remove("collapsed");
+				    renderLiveRoom();
+				    renderLiveRoomEvents({ scrollToBottom: false });
+				    loadLiveRoomEvents(row.id).catch(() => {});
+				    subscribeLiveRoom(row.id);
+				  }
+
+			  function closeLiveRoom() {
+			    resetLiveRtc();
+			    unsubscribeLiveRoom();
+			    state.liveRoom = null;
+			    state.liveRoomEvents = [];
+			    state.liveRoomProfiles = new Map();
+			    if (dom.liveRoom) dom.liveRoom.classList.add("collapsed");
 			  }
 
-		  function closeLiveRoom() {
-		    unsubscribeLiveRoom();
-		    state.liveRoom = null;
-		    state.liveRoomEvents = [];
-		    state.liveRoomProfiles = new Map();
-		    if (dom.liveRoom) dom.liveRoom.classList.add("collapsed");
-		  }
+			  function renderLiveRoom() {
+			    const row = state.liveRoom;
+			    if (!row) return;
+			    if (dom.liveRoomTitle) dom.liveRoomTitle.textContent = row.title || "Live Room";
+			    const bits = [];
+			    if (row.host) {
+			      const hostLabel = String(row.host);
+			      bits.push(hostLabel.startsWith("@") ? hostLabel : `@${hostLabel}`);
+			    } else {
+			      bits.push("live");
+			    }
+			    if (row.room_name) bits.push(`room: ${row.room_name}`);
+			    bits.push("voice streaming soon");
+			    if (dom.liveRoomSubtitle) dom.liveRoomSubtitle.textContent = bits.filter(Boolean).join(" · ");
+			    if (dom.liveRoomSend) dom.liveRoomSend.disabled = !(state.supabaseSession?.user?.id || "");
+			    updateLiveRtcUi();
+			  }
 
-		  function renderLiveRoom() {
-		    const row = state.liveRoom;
-		    if (!row) return;
-		    if (dom.liveRoomTitle) dom.liveRoomTitle.textContent = row.title || "Live Room";
-		    const bits = [];
-		    if (row.host) {
-		      const hostLabel = String(row.host);
-		      bits.push(hostLabel.startsWith("@") ? hostLabel : `@${hostLabel}`);
-		    } else {
-		      bits.push("live");
-		    }
-		    if (row.room_name) bits.push(`room: ${row.room_name}`);
-		    bits.push("voice streaming soon");
-		    if (dom.liveRoomSubtitle) dom.liveRoomSubtitle.textContent = bits.filter(Boolean).join(" · ");
-		    if (dom.liveRoomSend) dom.liveRoomSend.disabled = !(state.supabaseSession?.user?.id || "");
-		  }
+			  const LIVE_RTC_EVENT_TYPES = new Set(["webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_hangup"]);
+			  const LIVE_RTC_CONFIG = {
+			    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+			  };
 
-		  function renderLiveRoomEvents({ scrollToBottom } = { scrollToBottom: true }) {
-		    if (!dom.liveRoomEvents) return;
-		    dom.liveRoomEvents.innerHTML = "";
-		    const events = state.liveRoomEvents || [];
+			  function isLiveRtcEventType(type) {
+			    return !!type && LIVE_RTC_EVENT_TYPES.has(type);
+			  }
+
+			  function ensureLiveRtc() {
+			    if (!state.liveRtc) {
+			      state.liveRtc = {
+			        micEnabled: false,
+			        localStream: null,
+			        peers: new Map(),
+			        listening: false,
+			        pc: null,
+			        remoteStream: null,
+			        pendingOffers: new Map(),
+			        pendingCandidates: new Map(),
+			      };
+			    }
+			    return state.liveRtc;
+			  }
+
+			  function isHostInLiveRoom() {
+			    const uid = state.supabaseSession?.user?.id || "";
+			    const hostId = state.liveRoom?.host_user_id || "";
+			    return !!uid && !!hostId && uid === hostId;
+			  }
+
+			  function setLiveAudioStatus(text) {
+			    if (!dom.liveRoomAudioStatus) return;
+			    dom.liveRoomAudioStatus.textContent = text || "—";
+			  }
+
+			  function updateLiveRtcUi() {
+			    const rtc = ensureLiveRtc();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    const authed = !!uid;
+			    const isHost = isHostInLiveRoom();
+
+			    if (dom.liveRoomMicBtn) {
+			      dom.liveRoomMicBtn.style.display = isHost ? "" : "none";
+			      dom.liveRoomMicBtn.disabled = !authed;
+			      dom.liveRoomMicBtn.textContent = rtc.micEnabled ? "Disable Mic" : "Enable Mic";
+			    }
+			    if (dom.liveRoomAudioBtn) {
+			      dom.liveRoomAudioBtn.style.display = isHost ? "none" : "";
+			      dom.liveRoomAudioBtn.disabled = !authed;
+			      dom.liveRoomAudioBtn.textContent = rtc.listening ? "Disable Audio" : "Enable Audio";
+			    }
+
+			    if (!authed) {
+			      setLiveAudioStatus("Sign in for chat + audio");
+			      return;
+			    }
+			    if (isHost) {
+			      const peerCount = rtc.peers instanceof Map ? rtc.peers.size : 0;
+			      if (rtc.micEnabled) setLiveAudioStatus(`Mic on · ${peerCount} listener${peerCount === 1 ? "" : "s"}`);
+			      else setLiveAudioStatus(rtc.pendingOffers?.size ? `Enable mic to accept ${rtc.pendingOffers.size} listener${rtc.pendingOffers.size === 1 ? "" : "s"}` : "Mic off");
+			      return;
+			    }
+			    setLiveAudioStatus(rtc.listening ? "Listening" : "Audio off");
+			  }
+
+			  function resetLiveRtc() {
+			    const rtc = state.liveRtc;
+			    if (rtc) {
+			      try {
+			        if (rtc.pc) rtc.pc.close();
+			      } catch {}
+			      rtc.pc = null;
+			      try {
+			        if (rtc.peers instanceof Map) {
+			          rtc.peers.forEach((pc) => {
+			            try {
+			              pc.close();
+			            } catch {}
+			          });
+			        }
+			      } catch {}
+			      rtc.peers = new Map();
+			      try {
+			        if (rtc.localStream) rtc.localStream.getTracks().forEach((t) => t.stop());
+			      } catch {}
+			      rtc.localStream = null;
+			      rtc.remoteStream = null;
+			      rtc.listening = false;
+			      rtc.micEnabled = false;
+			      rtc.pendingOffers = new Map();
+			      rtc.pendingCandidates = new Map();
+			    }
+			    if (dom.liveRoomAudioEl) {
+			      try {
+			        dom.liveRoomAudioEl.srcObject = null;
+			      } catch {}
+			    }
+			    state.liveRtc = null;
+			    updateLiveRtcUi();
+			  }
+
+			  async function sendLiveRtcEvent(type, payload) {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    const liveId = state.liveRoom?.id || "";
+			    if (!client || !uid || !liveId) return { ok: false };
+			    try {
+			      const { error } = await client.from("live_events").insert({
+			        live_session_id: liveId,
+			        user_id: uid,
+			        type,
+			        payload: payload || {},
+			      });
+			      if (error) throw error;
+			      return { ok: true };
+			    } catch (err) {
+			      console.warn("sendLiveRtcEvent failed", err);
+			      return { ok: false, error: err };
+			    }
+			  }
+
+			  function normalizeCandidate(candidate) {
+			    if (!candidate) return null;
+			    if (typeof candidate === "string") return { candidate };
+			    if (typeof candidate === "object" && candidate.candidate) return candidate;
+			    return null;
+			  }
+
+			  async function handleLiveRtcSignal(ev) {
+			    if (!ev?.id || state.liveRtcProcessed.has(ev.id)) return;
+			    if (!isLiveRtcEventType(ev.type)) return;
+			    state.liveRtcProcessed.add(ev.id);
+
+			    const rtc = ensureLiveRtc();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    const hostId = state.liveRoom?.host_user_id || "";
+			    const isHost = isHostInLiveRoom();
+			    const payload = ev?.payload || {};
+
+			    if (ev.type === "webrtc_offer" && isHost) {
+			      const to = payload.to_user_id || hostId;
+			      if (to && uid && to !== uid) return;
+			      const fromUserId = payload.from_user_id || ev.user_id || "";
+			      const sdp = payload.sdp || "";
+			      if (!fromUserId || !sdp) return;
+			      if (!rtc.micEnabled || !rtc.localStream) {
+			        rtc.pendingOffers.set(fromUserId, sdp);
+			        updateLiveRtcUi();
+			        return;
+			      }
+			      await hostAcceptOffer(fromUserId, sdp);
+			      return;
+			    }
+
+			    if (ev.type === "webrtc_answer" && !isHost) {
+			      const to = payload.to_user_id || "";
+			      if (!uid || to !== uid) return;
+			      const sdp = payload.sdp || "";
+			      if (!sdp || !rtc.pc) return;
+			      try {
+			        await rtc.pc.setRemoteDescription({ type: "answer", sdp });
+			      } catch (err) {
+			        console.warn("setRemoteDescription(answer) failed", err);
+			      }
+			      const queued = rtc.pendingCandidates.get(hostId) || [];
+			      for (const cand of queued) {
+			        try {
+			          await rtc.pc.addIceCandidate(cand);
+			        } catch {}
+			      }
+			      rtc.pendingCandidates.delete(hostId);
+			      updateLiveRtcUi();
+			      return;
+			    }
+
+			    if (ev.type === "webrtc_ice") {
+			      const to = payload.to_user_id || "";
+			      if (!uid || to !== uid) return;
+			      const fromUserId = payload.from_user_id || ev.user_id || "";
+			      const cand = normalizeCandidate(payload.candidate);
+			      if (!cand) return;
+			      if (isHost) {
+			        const pc = rtc.peers.get(fromUserId) || null;
+			        if (!pc) {
+			          const q = rtc.pendingCandidates.get(fromUserId) || [];
+			          q.push(cand);
+			          rtc.pendingCandidates.set(fromUserId, q);
+			          return;
+			        }
+			        try {
+			          await pc.addIceCandidate(cand);
+			        } catch {}
+			        return;
+			      }
+			      if (!rtc.pc) {
+			        const q = rtc.pendingCandidates.get(hostId) || [];
+			        q.push(cand);
+			        rtc.pendingCandidates.set(hostId, q);
+			        return;
+			      }
+			      try {
+			        await rtc.pc.addIceCandidate(cand);
+			      } catch {}
+			      return;
+			    }
+			  }
+
+			  async function hostAcceptOffer(remoteUserId, offerSdp) {
+			    const rtc = ensureLiveRtc();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!uid || !remoteUserId || !offerSdp) return;
+			    if (!rtc.localStream) return;
+
+			    if (rtc.peers.has(remoteUserId)) {
+			      try {
+			        rtc.peers.get(remoteUserId).close();
+			      } catch {}
+			      rtc.peers.delete(remoteUserId);
+			    }
+
+			    const pc = new RTCPeerConnection(LIVE_RTC_CONFIG);
+			    rtc.peers.set(remoteUserId, pc);
+			    rtc.localStream.getTracks().forEach((t) => pc.addTrack(t, rtc.localStream));
+
+			    pc.onicecandidate = (e) => {
+			      if (!e.candidate) return;
+			      const cand = e.candidate.toJSON ? e.candidate.toJSON() : { candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex };
+			      sendLiveRtcEvent("webrtc_ice", { to_user_id: remoteUserId, from_user_id: uid, candidate: cand }).catch(() => {});
+			    };
+
+			    pc.onconnectionstatechange = () => {
+			      const st = pc.connectionState || "";
+			      if (st === "failed" || st === "disconnected" || st === "closed") {
+			        try {
+			          pc.close();
+			        } catch {}
+			        rtc.peers.delete(remoteUserId);
+			        updateLiveRtcUi();
+			      }
+			    };
+
+			    try {
+			      await pc.setRemoteDescription({ type: "offer", sdp: offerSdp });
+			      const queued = rtc.pendingCandidates.get(remoteUserId) || [];
+			      for (const cand of queued) {
+			        try {
+			          await pc.addIceCandidate(cand);
+			        } catch {}
+			      }
+			      rtc.pendingCandidates.delete(remoteUserId);
+			      const answer = await pc.createAnswer();
+			      await pc.setLocalDescription(answer);
+			      await sendLiveRtcEvent("webrtc_answer", { to_user_id: remoteUserId, from_user_id: uid, sdp: answer.sdp });
+			    } catch (err) {
+			      console.warn("hostAcceptOffer failed", err);
+			      try {
+			        pc.close();
+			      } catch {}
+			      rtc.peers.delete(remoteUserId);
+			    }
+			    updateLiveRtcUi();
+			  }
+
+			  async function toggleLiveMic() {
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!uid) {
+			      alert("Sign in with Supabase to enable mic.");
+			      return;
+			    }
+			    if (!isHostInLiveRoom()) {
+			      alert("Only the host can enable mic.");
+			      return;
+			    }
+			    const rtc = ensureLiveRtc();
+			    if (rtc.micEnabled) {
+			      resetLiveRtc();
+			      state.liveRtcProcessed = new Set();
+			      renderLiveRoom();
+			      return;
+			    }
+			    try {
+			      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			      rtc.localStream = stream;
+			      rtc.micEnabled = true;
+			      updateLiveRtcUi();
+
+			      const offers = Array.from(rtc.pendingOffers.entries());
+			      rtc.pendingOffers.clear();
+			      for (const [remoteUserId, sdp] of offers) {
+			        await hostAcceptOffer(remoteUserId, sdp);
+			      }
+			    } catch (err) {
+			      console.warn("getUserMedia failed", err);
+			      alert("Could not access microphone.");
+			    }
+			    updateLiveRtcUi();
+			  }
+
+			  async function toggleLiveAudio() {
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!uid) {
+			      alert("Sign in with Supabase to enable audio.");
+			      return;
+			    }
+			    if (isHostInLiveRoom()) {
+			      toggleLiveMic();
+			      return;
+			    }
+			    const rtc = ensureLiveRtc();
+			    const hostId = state.liveRoom?.host_user_id || "";
+			    if (!hostId) return;
+
+			    if (rtc.listening) {
+			      resetLiveRtc();
+			      state.liveRtcProcessed = new Set();
+			      renderLiveRoom();
+			      return;
+			    }
+
+			    try {
+			      const pc = new RTCPeerConnection(LIVE_RTC_CONFIG);
+			      rtc.pc = pc;
+			      rtc.listening = true;
+			      rtc.pendingCandidates.set(hostId, []);
+			      const remoteStream = new MediaStream();
+			      rtc.remoteStream = remoteStream;
+
+			      pc.addTransceiver("audio", { direction: "recvonly" });
+
+			      pc.ontrack = (e) => {
+			        const stream = e.streams?.[0];
+			        if (stream) {
+			          stream.getTracks().forEach((t) => {
+			            try {
+			              remoteStream.addTrack(t);
+			            } catch {}
+			          });
+			        }
+			        if (dom.liveRoomAudioEl) {
+			          try {
+			            dom.liveRoomAudioEl.srcObject = remoteStream;
+			            dom.liveRoomAudioEl.play().catch(() => {});
+			          } catch {}
+			        }
+			        updateLiveRtcUi();
+			      };
+
+			      pc.onicecandidate = (e) => {
+			        if (!e.candidate) return;
+			        const cand = e.candidate.toJSON ? e.candidate.toJSON() : { candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex };
+			        sendLiveRtcEvent("webrtc_ice", { to_user_id: hostId, from_user_id: uid, candidate: cand }).catch(() => {});
+			      };
+
+			      const offer = await pc.createOffer();
+			      await pc.setLocalDescription(offer);
+			      await sendLiveRtcEvent("webrtc_offer", { to_user_id: hostId, from_user_id: uid, sdp: offer.sdp });
+			      updateLiveRtcUi();
+			    } catch (err) {
+			      console.warn("toggleLiveAudio failed", err);
+			      resetLiveRtc();
+			      alert("Could not start live audio.");
+			    }
+			  }
+
+			  function renderLiveRoomEvents({ scrollToBottom } = { scrollToBottom: true }) {
+			    if (!dom.liveRoomEvents) return;
+			    dom.liveRoomEvents.innerHTML = "";
+			    const events = state.liveRoomEvents || [];
 		    if (!events.length) {
 		      const li = document.createElement("li");
 		      const meta = document.createElement("div");
@@ -1351,13 +1728,22 @@
 		        const { data: profiles } = await client.from("profiles").select("user_id, handle, display_name").in("user_id", userIds);
 		        (profiles || []).forEach((p) => state.liveRoomProfiles.set(p.user_id, p));
 		      }
-		      state.liveRoomEvents = rows.map((r) => ({ ...r, user: r.user_id ? state.liveRoomProfiles.get(r.user_id) || null : null }));
-		      renderLiveRoomEvents({ scrollToBottom: true });
-		    } catch (err) {
-		      console.warn("loadLiveRoomEvents failed", err);
-		      state.liveRoomEvents = [];
-		      renderLiveRoomEvents({ scrollToBottom: false });
-		    }
+			      const enriched = rows.map((r) => ({ ...r, user: r.user_id ? state.liveRoomProfiles.get(r.user_id) || null : null }));
+			      const display = [];
+			      for (const ev of enriched) {
+			        if (isLiveRtcEventType(ev.type)) {
+			          await handleLiveRtcSignal(ev);
+			        } else {
+			          display.push(ev);
+			        }
+			      }
+			      state.liveRoomEvents = display;
+			      renderLiveRoomEvents({ scrollToBottom: true });
+			    } catch (err) {
+			      console.warn("loadLiveRoomEvents failed", err);
+			      state.liveRoomEvents = [];
+			      renderLiveRoomEvents({ scrollToBottom: false });
+			    }
 		  }
 
 		  function unsubscribeLiveRoom() {
@@ -1381,9 +1767,9 @@
 		        .on(
 		          "postgres_changes",
 		          { event: "INSERT", schema: "public", table: "live_events", filter: `live_session_id=eq.${liveId}` },
-		          async (payload) => {
-		            const ev = payload?.new || null;
-		            if (!ev?.id) return;
+			          async (payload) => {
+			            const ev = payload?.new || null;
+			            if (!ev?.id) return;
 		            if (ev.user_id && !state.liveRoomProfiles.has(ev.user_id)) {
 		              try {
 		                const { data: profile } = await client
@@ -1392,16 +1778,21 @@
 		                  .eq("user_id", ev.user_id)
 		                  .maybeSingle();
 		                if (profile?.user_id) state.liveRoomProfiles.set(profile.user_id, profile);
-		              } catch {
-		                // ignore
-		              }
-		            }
-		            state.liveRoomEvents.push({ ...ev, user: ev.user_id ? state.liveRoomProfiles.get(ev.user_id) || null : null });
-		            renderLiveRoomEvents({ scrollToBottom: true });
-		          },
-		        )
-		        .subscribe();
-		    } catch (err) {
+			              } catch {
+			                // ignore
+			              }
+			            }
+			            const withUser = { ...ev, user: ev.user_id ? state.liveRoomProfiles.get(ev.user_id) || null : null };
+			            if (isLiveRtcEventType(withUser.type)) {
+			              handleLiveRtcSignal(withUser).catch(() => {});
+			              return;
+			            }
+			            state.liveRoomEvents.push(withUser);
+			            renderLiveRoomEvents({ scrollToBottom: true });
+			          },
+			        )
+			        .subscribe();
+			    } catch (err) {
 		      console.warn("subscribeLiveRoom failed", err);
 		      state.liveRoomChannel = null;
 		    }
@@ -1455,12 +1846,17 @@
 	        headers: getSupabaseAuthHeaders(),
 	        body: { title, visibility, zip, location_opt_in: locationOptIn },
 	      });
-	      if (error) throw error;
-	      state.currentLive = data?.live || null;
-	      if (dom.endLiveBtn) dom.endLiveBtn.disabled = !state.currentLive?.id;
-	      alert(state.currentLive?.room_name ? `You're live. Room: ${state.currentLive.room_name}` : "You're live.");
-	      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
-	    } catch (err) {
+		      if (error) throw error;
+		      state.currentLive = data?.live || null;
+		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = !state.currentLive?.id;
+		      const handle = String(localStorage.getItem(PROFILE_HANDLE_KEY) || "").trim().replace(/^@+/, "");
+		      const hostLabel = handle ? `@${handle}` : "You";
+		      if (state.currentLive?.id) {
+		        openLiveRoom({ ...state.currentLive, host_user_id: uid, host: hostLabel });
+		      }
+		      alert(state.currentLive?.room_name ? `You're live. Room: ${state.currentLive.room_name}` : "You're live.");
+		      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
+		    } catch (err) {
 	      console.warn("startLive failed", err);
 	      alert(`Could not start live: ${err?.message || "unknown error"}`);
 	    }
@@ -1480,12 +1876,15 @@
 	        headers: getSupabaseAuthHeaders(),
 	        body: { id },
 	      });
-	      if (error) throw error;
-	      state.currentLive = null;
-	      if (dom.endLiveBtn) dom.endLiveBtn.disabled = true;
-	      alert("Live ended.");
-	      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
-	    } catch (err) {
+		      if (error) throw error;
+		      state.currentLive = null;
+		      if (dom.endLiveBtn) dom.endLiveBtn.disabled = true;
+		      if (state.liveRoom?.id === id) {
+		        closeLiveRoom();
+		      }
+		      alert("Live ended.");
+		      if ((state.sessionsFeed || dom.sessionsFeed?.value) === "live") loadSupabaseSessions();
+		    } catch (err) {
 	      console.warn("endLive failed", err);
 	      alert(`Could not end live: ${err?.message || "unknown error"}`);
 	    }

@@ -824,6 +824,15 @@ button:hover:not(:disabled) {
   margin: 10px 0 0;
 }
 
+.panel.live-room .live-audio {
+  margin: 10px 0 0;
+  align-items: center;
+}
+
+.panel.live-room audio {
+  display: none;
+}
+
 .panel.live-room .live-composer input[type="text"] {
   flex: 1;
 }

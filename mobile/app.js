@@ -515,8 +515,80 @@
 	  function LiveRoomScreen({ supabase, live, userId, onClose, toast }) {
 	    const [events, setEvents] = useState([]);
 	    const [text, setText] = useState("");
+	    const [micOn, setMicOn] = useState(false);
+	    const [audioOn, setAudioOn] = useState(false);
+	    const [voiceStatus, setVoiceStatus] = useState("—");
 	    const profilesRef = useRef(new Map());
 	    const scrollerRef = useRef(null);
+	    const audioRef = useRef(null);
+	    const rtcRef = useRef({
+	      processed: new Set(),
+	      micEnabled: false,
+	      listening: false,
+	      localStream: null,
+	      peers: new Map(),
+	      pc: null,
+	      remoteStream: null,
+	      pendingOffers: new Map(),
+	      pendingCandidates: new Map(),
+	    });
+
+	    const RTC_EVENT_TYPES = new Set(["webrtc_offer", "webrtc_answer", "webrtc_ice", "webrtc_hangup"]);
+	    const isHost = !!(userId && live?.host_user_id && userId === live.host_user_id);
+
+	    const updateVoice = () => {
+	      const rtc = rtcRef.current;
+	      const peerCount = rtc.peers instanceof Map ? rtc.peers.size : 0;
+	      setMicOn(!!rtc.micEnabled);
+	      setAudioOn(!!rtc.listening);
+	      if (!userId) {
+	        setVoiceStatus("Sign in for voice");
+	      } else if (isHost) {
+	        if (rtc.micEnabled) setVoiceStatus(`Mic on · ${peerCount} listener${peerCount === 1 ? "" : "s"}`);
+	        else setVoiceStatus(rtc.pendingOffers?.size ? `Enable mic to accept ${rtc.pendingOffers.size} listener${rtc.pendingOffers.size === 1 ? "" : "s"}` : "Mic off");
+	      } else {
+	        setVoiceStatus(rtc.listening ? "Listening" : "Audio off");
+	      }
+	    };
+
+	    const resetRtc = () => {
+	      const rtc = rtcRef.current;
+	      try {
+	        rtc.pc?.close();
+	      } catch {}
+	      rtc.pc = null;
+	      try {
+	        if (rtc.peers instanceof Map) {
+	          rtc.peers.forEach((pc) => {
+	            try {
+	              pc.close();
+	            } catch {}
+	          });
+	        }
+	      } catch {}
+	      rtc.peers = new Map();
+	      try {
+	        rtc.localStream?.getTracks?.().forEach((t) => t.stop());
+	      } catch {}
+	      rtc.localStream = null;
+	      rtc.remoteStream = null;
+	      rtc.micEnabled = false;
+	      rtc.listening = false;
+	      rtc.pendingOffers = new Map();
+	      rtc.pendingCandidates = new Map();
+	      if (audioRef.current) {
+	        try {
+	          audioRef.current.srcObject = null;
+	        } catch {}
+	      }
+	      updateVoice();
+	    };
+
+	    useEffect(() => {
+	      rtcRef.current.processed = new Set();
+	      resetRtc();
+	      // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [live?.id]);
 
 	    useEffect(() => {
 	      profilesRef.current = new Map();
@@ -534,18 +606,28 @@
 	          if (cancelled) return;
 	          if (error) throw error;
 	          const rows = Array.isArray(data) ? data : [];
-	          const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
-	          if (userIds.length) {
-	            const { data: profiles } = await supabase.from("profiles").select("user_id, handle, display_name").in("user_id", userIds);
-	            if (cancelled) return;
-	            (profiles || []).forEach((p) => profilesRef.current.set(p.user_id, p));
-	          }
-	          if (cancelled) return;
-	          setEvents(rows.map((r) => ({ ...r, user: r.user_id ? profilesRef.current.get(r.user_id) || null : null })));
-	        } catch (err) {
-	          console.warn("live events load failed", err);
-	          toast("Couldn't load chat");
-	          setEvents([]);
+		          const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+		          if (userIds.length) {
+		            const { data: profiles } = await supabase.from("profiles").select("user_id, handle, display_name").in("user_id", userIds);
+		            if (cancelled) return;
+		            (profiles || []).forEach((p) => profilesRef.current.set(p.user_id, p));
+		          }
+		          if (cancelled) return;
+		          const enriched = rows.map((r) => ({ ...r, user: r.user_id ? profilesRef.current.get(r.user_id) || null : null }));
+		          const display = [];
+		          for (const ev of enriched) {
+		            if (RTC_EVENT_TYPES.has(ev.type)) {
+		              // Process any pending RTC signals in history (offers/answers/ice).
+		              await handleRtcSignal(ev);
+		            } else {
+		              display.push(ev);
+		            }
+		          }
+		          setEvents(display);
+		        } catch (err) {
+		          console.warn("live events load failed", err);
+		          toast("Couldn't load chat");
+		          setEvents([]);
 	        }
 	      })();
 	      return () => {
@@ -553,29 +635,33 @@
 	      };
 	    }, [supabase, live?.id]);
 
-	    useEffect(() => {
-	      if (!supabase || !live?.id) return;
-	      const channel = supabase
-	        .channel(`rs-live-events-${live.id}`)
-	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "live_events", filter: `live_session_id=eq.${live.id}` }, async (payload) => {
-	          const ev = payload?.new || null;
-	          if (!ev?.id) return;
-	          let user = null;
-	          if (ev.user_id) {
-	            user = profilesRef.current.get(ev.user_id) || null;
-	            if (!user) {
+		    useEffect(() => {
+		      if (!supabase || !live?.id) return;
+		      const channel = supabase
+		        .channel(`rs-live-events-${live.id}`)
+		        .on("postgres_changes", { event: "INSERT", schema: "public", table: "live_events", filter: `live_session_id=eq.${live.id}` }, async (payload) => {
+		          const ev = payload?.new || null;
+		          if (!ev?.id) return;
+		          if (RTC_EVENT_TYPES.has(ev.type)) {
+		            await handleRtcSignal(ev);
+		            return;
+		          }
+		          let user = null;
+		          if (ev.user_id) {
+		            user = profilesRef.current.get(ev.user_id) || null;
+		            if (!user) {
 	              try {
 	                const { data: profile } = await supabase.from("profiles").select("user_id, handle, display_name").eq("user_id", ev.user_id).maybeSingle();
 	                if (profile?.user_id) {
 	                  profilesRef.current.set(profile.user_id, profile);
 	                  user = profile;
 	                }
-	              } catch {}
-	            }
-	          }
-	          setEvents((prev) => [...prev, { ...ev, user }]);
-	        })
-	        .subscribe();
+		              } catch {}
+		            }
+		          }
+		          setEvents((prev) => [...prev, { ...ev, user }]);
+		        })
+		        .subscribe();
 	      return () => {
 	        try {
 	          channel.unsubscribe().catch(() => {});
@@ -583,16 +669,249 @@
 	      };
 	    }, [supabase, live?.id]);
 
-	    useEffect(() => {
-	      requestAnimationFrame(() => {
-	        try {
-	          scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" });
-	        } catch {}
-	      });
-	    }, [events.length]);
+		    useEffect(() => {
+		      requestAnimationFrame(() => {
+		        try {
+		          scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" });
+		        } catch {}
+		      });
+		    }, [events.length]);
 
-	    const hostLabel = live?.host ? (String(live.host).startsWith("@") ? String(live.host) : `@${live.host}`) : "live";
-	    const subtitle = [hostLabel, live?.room_name ? `room: ${live.room_name}` : null, "voice streaming soon"].filter(Boolean).join(" · ");
+		    const sendRtcEvent = async (type, payload) => {
+		      if (!supabase || !userId || !live?.id) return { ok: false };
+		      try {
+		        const { error } = await supabase.from("live_events").insert({
+		          live_session_id: live.id,
+		          user_id: userId,
+		          type,
+		          payload: payload || {},
+		        });
+		        if (error) throw error;
+		        return { ok: true };
+		      } catch (err) {
+		        console.warn("sendRtcEvent failed", err);
+		        return { ok: false, error: err };
+		      }
+		    };
+
+		    const normalizeCandidate = (candidate) => {
+		      if (!candidate) return null;
+		      if (typeof candidate === "string") return { candidate };
+		      if (typeof candidate === "object" && candidate.candidate) return candidate;
+		      return null;
+		    };
+
+		    const hostAcceptOffer = async (remoteUserId, offerSdp) => {
+		      const rtc = rtcRef.current;
+		      if (!supabase || !userId || !live?.id || !remoteUserId || !offerSdp) return;
+		      if (!rtc.localStream) return;
+
+		      if (rtc.peers.has(remoteUserId)) {
+		        try {
+		          rtc.peers.get(remoteUserId).close();
+		        } catch {}
+		        rtc.peers.delete(remoteUserId);
+		      }
+
+		      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+		      rtc.peers.set(remoteUserId, pc);
+		      rtc.localStream.getTracks().forEach((t) => pc.addTrack(t, rtc.localStream));
+
+		      pc.onicecandidate = (e) => {
+		        if (!e.candidate) return;
+		        const cand = e.candidate.toJSON ? e.candidate.toJSON() : { candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex };
+		        sendRtcEvent("webrtc_ice", { to_user_id: remoteUserId, from_user_id: userId, candidate: cand }).catch(() => {});
+		      };
+
+		      pc.onconnectionstatechange = () => {
+		        const st = pc.connectionState || "";
+		        if (st === "failed" || st === "disconnected" || st === "closed") {
+		          try {
+		            pc.close();
+		          } catch {}
+		          rtc.peers.delete(remoteUserId);
+		          updateVoice();
+		        }
+		      };
+
+		      try {
+		        await pc.setRemoteDescription({ type: "offer", sdp: offerSdp });
+		        const queued = rtc.pendingCandidates.get(remoteUserId) || [];
+		        for (const cand of queued) {
+		          try {
+		            await pc.addIceCandidate(cand);
+		          } catch {}
+		        }
+		        rtc.pendingCandidates.delete(remoteUserId);
+		        const answer = await pc.createAnswer();
+		        await pc.setLocalDescription(answer);
+		        await sendRtcEvent("webrtc_answer", { to_user_id: remoteUserId, from_user_id: userId, sdp: answer.sdp });
+		      } catch (err) {
+		        console.warn("hostAcceptOffer failed", err);
+		        try {
+		          pc.close();
+		        } catch {}
+		        rtc.peers.delete(remoteUserId);
+		      }
+		      updateVoice();
+		    };
+
+		    const handleRtcSignal = async (ev) => {
+		      const rtc = rtcRef.current;
+		      if (!ev?.id || rtc.processed.has(ev.id)) return;
+		      rtc.processed.add(ev.id);
+		      const payload = ev?.payload || {};
+
+		      if (ev.type === "webrtc_offer" && isHost) {
+		        const to = payload.to_user_id || live?.host_user_id || "";
+		        if (to && userId && to !== userId) return;
+		        const fromUserId = payload.from_user_id || ev.user_id || "";
+		        const sdp = payload.sdp || "";
+		        if (!fromUserId || !sdp) return;
+		        if (!rtc.micEnabled || !rtc.localStream) {
+		          rtc.pendingOffers.set(fromUserId, sdp);
+		          updateVoice();
+		          return;
+		        }
+		        await hostAcceptOffer(fromUserId, sdp);
+		        return;
+		      }
+
+		      if (ev.type === "webrtc_answer" && !isHost) {
+		        const to = payload.to_user_id || "";
+		        if (!userId || to !== userId) return;
+		        const sdp = payload.sdp || "";
+		        if (!sdp || !rtc.pc) return;
+		        try {
+		          await rtc.pc.setRemoteDescription({ type: "answer", sdp });
+		        } catch (err) {
+		          console.warn("setRemoteDescription(answer) failed", err);
+		        }
+		        const hostId = live?.host_user_id || "";
+		        const queued = rtc.pendingCandidates.get(hostId) || [];
+		        for (const cand of queued) {
+		          try {
+		            await rtc.pc.addIceCandidate(cand);
+		          } catch {}
+		        }
+		        rtc.pendingCandidates.delete(hostId);
+		        updateVoice();
+		        return;
+		      }
+
+		      if (ev.type === "webrtc_ice") {
+		        const to = payload.to_user_id || "";
+		        if (!userId || to !== userId) return;
+		        const fromUserId = payload.from_user_id || ev.user_id || "";
+		        const cand = normalizeCandidate(payload.candidate);
+		        if (!cand) return;
+		        if (isHost) {
+		          const pc = rtc.peers.get(fromUserId) || null;
+		          if (!pc) {
+		            const q = rtc.pendingCandidates.get(fromUserId) || [];
+		            q.push(cand);
+		            rtc.pendingCandidates.set(fromUserId, q);
+		            return;
+		          }
+		          try {
+		            await pc.addIceCandidate(cand);
+		          } catch {}
+		          return;
+		        }
+		        const hostId = live?.host_user_id || "";
+		        if (!rtc.pc) {
+		          const q = rtc.pendingCandidates.get(hostId) || [];
+		          q.push(cand);
+		          rtc.pendingCandidates.set(hostId, q);
+		          return;
+		        }
+		        try {
+		          await rtc.pc.addIceCandidate(cand);
+		        } catch {}
+		        return;
+		      }
+		    };
+
+		    const toggleMic = async () => {
+		      if (!userId) return toast("Sign in to enable mic");
+		      if (!isHost) return toast("Only host can enable mic");
+		      const rtc = rtcRef.current;
+		      if (rtc.micEnabled) {
+		        resetRtc();
+		        rtc.processed = new Set();
+		        return;
+		      }
+		      try {
+		        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		        rtc.localStream = stream;
+		        rtc.micEnabled = true;
+		        updateVoice();
+		        const offers = Array.from(rtc.pendingOffers.entries());
+		        rtc.pendingOffers.clear();
+		        for (const [remoteUserId, sdp] of offers) {
+		          await hostAcceptOffer(remoteUserId, sdp);
+		        }
+		      } catch (err) {
+		        console.warn("getUserMedia failed", err);
+		        toast("Mic permission denied");
+		      }
+		      updateVoice();
+		    };
+
+		    const toggleAudio = async () => {
+		      if (!userId) return toast("Sign in to enable audio");
+		      if (isHost) return toggleMic();
+		      const rtc = rtcRef.current;
+		      const hostId = live?.host_user_id || "";
+		      if (!hostId) return;
+		      if (rtc.listening) {
+		        resetRtc();
+		        rtc.processed = new Set();
+		        return;
+		      }
+		      try {
+		        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+		        rtc.pc = pc;
+		        rtc.listening = true;
+		        rtc.pendingCandidates.set(hostId, []);
+		        const remoteStream = new MediaStream();
+		        rtc.remoteStream = remoteStream;
+		        pc.addTransceiver("audio", { direction: "recvonly" });
+		        pc.ontrack = (e) => {
+		          const stream = e.streams?.[0];
+		          if (stream) {
+		            stream.getTracks().forEach((t) => {
+		              try {
+		                remoteStream.addTrack(t);
+		              } catch {}
+		            });
+		          }
+		          if (audioRef.current) {
+		            try {
+		              audioRef.current.srcObject = remoteStream;
+		              audioRef.current.play().catch(() => {});
+		            } catch {}
+		          }
+		          updateVoice();
+		        };
+		        pc.onicecandidate = (e) => {
+		          if (!e.candidate) return;
+		          const cand = e.candidate.toJSON ? e.candidate.toJSON() : { candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex };
+		          sendRtcEvent("webrtc_ice", { to_user_id: hostId, from_user_id: userId, candidate: cand }).catch(() => {});
+		        };
+		        const offer = await pc.createOffer();
+		        await pc.setLocalDescription(offer);
+		        await sendRtcEvent("webrtc_offer", { to_user_id: hostId, from_user_id: userId, sdp: offer.sdp });
+		        updateVoice();
+		      } catch (err) {
+		        console.warn("toggleAudio failed", err);
+		        resetRtc();
+		        toast("Couldn't start audio");
+		      }
+		    };
+
+		    const hostLabel = live?.host ? (String(live.host).startsWith("@") ? String(live.host) : `@${live.host}`) : "live";
+		    const subtitle = [hostLabel, live?.room_name ? `room: ${live.room_name}` : null, "voice streaming soon"].filter(Boolean).join(" · ");
 
 	    const send = async () => {
 	      const t = String(text || "").trim();
@@ -614,16 +933,22 @@
 	      }
 	    };
 
-	    return html`<div>
-	      <div className="section">
-	        <div className="section-head">
-	          <div className="section-title">${live?.title || "Live Room"}</div>
-	          <button className="pill" onClick=${onClose} type="button">Back</button>
-	        </div>
-	        <div className="card">
-	          <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${subtitle}</div>
-	        </div>
-	      </div>
+		    return html`<div>
+		      <div className="section">
+		        <div className="section-head">
+		          <div className="section-title">${live?.title || "Live Room"}</div>
+		          <button className="pill" onClick=${onClose} type="button">Back</button>
+		        </div>
+		        <div className="card">
+		          <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${subtitle}</div>
+		          <div className="row" style=${{ marginTop: "12px", flexWrap: "wrap", justifyContent: "space-between" }}>
+		            <button className=${cx("pill", (isHost ? micOn : audioOn) ? "primary" : "ghost")} onClick=${isHost ? toggleMic : toggleAudio} type="button">
+		              ${isHost ? (micOn ? "Disable Mic" : "Enable Mic") : audioOn ? "Disable Audio" : "Enable Audio"}
+		            </button>
+		            <div className="chip">${voiceStatus}</div>
+		          </div>
+		        </div>
+		      </div>
 
 	      <div className="section">
 	        <div className="card strong" ref=${scrollerRef} style=${{ maxHeight: "46vh", overflowY: "auto" }}>
@@ -651,9 +976,9 @@
 	        </div>
 	      </div>
 
-	      <div className="section">
-	        <div className="row" style=${{ alignItems: "stretch" }}>
-	          <div className="field grow">
+		      <div className="section">
+		        <div className="row" style=${{ alignItems: "stretch" }}>
+		          <div className="field grow">
 	            <input
 	              value=${text}
 	              onChange=${(e) => setText(e.target.value)}
@@ -666,10 +991,11 @@
 	          <button className=${cx("pill", userId ? "primary" : "ghost")} disabled=${!userId || !String(text || "").trim()} onClick=${send} type="button">
 	            Send
 	          </button>
-	        </div>
-	      </div>
-	    </div>`;
-	  }
+		        </div>
+		      </div>
+		      <audio ref=${audioRef} playsInline style=${{ display: "none" }}></audio>
+		    </div>`;
+		  }
 
 	  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, likes, toggleLike, onLoad, toast }) {
 	    const [mode, setMode] = useState("new");

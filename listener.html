@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio-Lab Listener</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com wss://*.supabase.co wss://*.supabase.net; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
+	  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net wss://*.spotify.com wss://*.supabase.co wss://*.supabase.net stun: turn:; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -174,10 +174,16 @@
       <button id="live-room-close" class="ghost small">Close</button>
     </div>
     <ul id="live-room-events" class="list live-events"></ul>
+    <div class="row live-audio">
+      <button id="live-room-audio-btn" class="ghost small" type="button">Enable Audio</button>
+      <button id="live-room-mic-btn" class="ghost small" type="button">Enable Mic</button>
+      <span class="hint" id="live-room-audio-status">—</span>
+    </div>
     <div class="row live-composer">
       <input id="live-room-message" type="text" placeholder="Say something…" autocomplete="off" />
       <button id="live-room-send" class="primary">Send</button>
     </div>
+    <audio id="live-room-audio" playsinline></audio>
   </section>
 
   <div class="listen-bar" id="listen-bar">
