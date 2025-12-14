@@ -15,20 +15,80 @@
 </head>
 <body>
   <div class="noise"></div>
-  <header class="hero">
-    <div class="title-block">
-      <p class="tag">interplanetary radio show</p>
-      <h1>LISTENER</h1>
-      <p class="lede">Play finished radio shows with cover art, metadata, and comments.</p>
-      <div class="status-chip" id="spotify-status">spotify: disconnected</div>
+  <header class="hero-shell listener-hero">
+    <div class="hero-card">
+      <div class="title-block">
+        <p class="tag">interplanetary radio show</p>
+        <h1>LISTENER</h1>
+        <p class="lede">Play finished radio shows with cover art, metadata, and comments.</p>
+      </div>
+      <div class="status-row">
+        <div class="status-chip" id="spotify-status">spotify: disconnected</div>
+        <div class="status-chip subtle" id="supabase-auth-status">supabase: signed out</div>
+      </div>
       <div class="top-actions">
+        <button id="connect-toggle" class="ghost small">Account</button>
         <a class="ghost small nav-link" href="index.html">Builder</a>
       </div>
     </div>
   </header>
 
-  <main class="grid">
-    <section class="panel listen-header">
+  <section class="panel connect floating collapsed" id="connect-panel">
+    <div class="panel-head">
+      <h2>Account</h2>
+      <span class="hint">social + nearby + inbox</span>
+      <button id="connect-close" class="ghost small">Close</button>
+    </div>
+
+    <div class="subhead">Supabase</div>
+    <label class="field">
+      <span>Supabase URL</span>
+      <input id="supabase-url" type="text" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>Supabase anon key</span>
+      <input id="supabase-key" type="password" placeholder="anon/public key" autocomplete="off" />
+    </label>
+    <div class="subhead">Supabase Auth</div>
+    <label class="field">
+      <span>Email</span>
+      <input id="supabase-email" type="text" placeholder="you@example.com" autocomplete="email" />
+    </label>
+    <div class="row wrap">
+      <button id="supabase-signin" class="ghost small">Email Link</button>
+      <button id="supabase-signout" class="ghost small" disabled>Sign Out</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="subhead">Profile</div>
+    <label class="field">
+      <span>Handle</span>
+      <input id="profile-handle" type="text" placeholder="handle (public)" autocomplete="off" />
+    </label>
+    <div class="row wrap">
+      <label class="field small">
+        <span>Zip</span>
+        <input id="profile-zip" type="text" placeholder="10001" autocomplete="postal-code" />
+      </label>
+      <label class="field small">
+        <span>Location opt-in</span>
+        <input id="profile-location-optin" type="checkbox" />
+      </label>
+      <button id="profile-save-btn" class="ghost small">Save Profile</button>
+    </div>
+
+    <div class="subhead">Follow</div>
+    <div class="row wrap">
+      <label class="field">
+        <span>Follow handle</span>
+        <input id="follow-handle" type="text" placeholder="@someone" autocomplete="off" />
+      </label>
+      <button id="follow-btn" class="ghost small">Follow</button>
+    </div>
+  </section>
+
+  <main class="grid listener-grid">
+    <section class="panel listen listen-header">
       <div class="panel-head">
         <h2>Load Show</h2>
         <span class="hint">JSON export from builder</span>
@@ -53,7 +113,7 @@
       </div>
     </section>
 
-    <section class="panel now">
+    <section class="panel now listen-now">
       <div class="panel-head">
         <h2 id="session-title">No show loaded</h2>
         <span class="hint" id="session-meta"></span>
@@ -72,25 +132,53 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel sessions" id="sessions-panel">
       <div class="panel-head">
-        <h2>Top Sessions</h2>
-        <span class="hint">Supabase-backed (falls back to static)</span>
+        <h2>Sessions</h2>
+        <span class="hint" id="sessions-status">—</span>
       </div>
       <div class="row wrap">
-        <button id="refresh-top-btn" class="ghost small">Refresh</button>
-        <input id="session-search" type="text" placeholder="Filter sessions..." />
+        <input id="sessions-search" type="text" placeholder="Search sessions..." />
+        <select id="sessions-feed">
+          <option value="public">Public</option>
+          <option value="following">Following</option>
+          <option value="nearby">Nearby</option>
+          <option value="inbox">Inbox</option>
+          <option value="live">Live</option>
+        </select>
+        <select id="sessions-sort">
+          <option value="new">Newest</option>
+          <option value="plays">Most plays</option>
+          <option value="downloads">Most downloads</option>
+          <option value="likes">Most likes</option>
+        </select>
+        <button id="sessions-refresh" class="ghost small">Refresh</button>
+        <button id="go-live-btn" class="ghost small">Go Live</button>
+        <button id="end-live-btn" class="ghost small" disabled>End Live</button>
       </div>
-      <ul id="top-sessions" class="list"></ul>
+      <ul id="sessions-list" class="list"></ul>
     </section>
 
-    <section class="panel">
+    <section class="panel show segments-panel">
       <div class="panel-head">
         <h2>Segments</h2>
       </div>
       <ul id="segments" class="list segments"></ul>
     </section>
   </main>
+
+  <section class="panel live-room collapsed" id="live-room">
+    <div class="panel-head">
+      <h2 id="live-room-title">Live Room</h2>
+      <span class="hint" id="live-room-subtitle">—</span>
+      <button id="live-room-close" class="ghost small">Close</button>
+    </div>
+    <ul id="live-room-events" class="list live-events"></ul>
+    <div class="row live-composer">
+      <input id="live-room-message" type="text" placeholder="Say something…" autocomplete="off" />
+      <button id="live-room-send" class="primary">Send</button>
+    </div>
+  </section>
 
   <div class="listen-bar" id="listen-bar">
     <div class="bar-cover" id="bar-cover"></div>

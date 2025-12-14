@@ -394,7 +394,7 @@
     </div>`;
   }
 
-  function BuilderScreen({ segments, setSegments, toast }) {
+	  function BuilderScreen({ segments, setSegments, toast }) {
     const [recording, setRecording] = useState(false);
     const [seconds, setSeconds] = useState(0);
     const timerRef = useRef(null);
@@ -509,17 +509,181 @@
           <button className="pill" style=${{ flex: 1 }} onClick=${() => toast("Publish (prototype)")} type="button">Publish</button>
         </div>
       </div>
-    </div>`;
-  }
+	    </div>`;
+	  }
 
-  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, likes, toggleLike, onLoad, toast }) {
-    const [mode, setMode] = useState("new");
-    const [q, setQ] = useState("");
-    const [rows, setRows] = useState(SAMPLE_SESSIONS);
-    const [following, setFollowing] = useState(() => new Set());
-    const [presence, setPresence] = useState(() => new Map());
-    const [inbox, setInbox] = useState([]);
-    const userId = supabaseSession?.user?.id || "";
+	  function LiveRoomScreen({ supabase, live, userId, onClose, toast }) {
+	    const [events, setEvents] = useState([]);
+	    const [text, setText] = useState("");
+	    const profilesRef = useRef(new Map());
+	    const scrollerRef = useRef(null);
+
+	    useEffect(() => {
+	      profilesRef.current = new Map();
+	      setEvents([]);
+	      if (!supabase || !live?.id) return;
+	      let cancelled = false;
+	      (async () => {
+	        try {
+	          const { data, error } = await supabase
+	            .from("live_events")
+	            .select("id, live_session_id, user_id, type, payload, created_at")
+	            .eq("live_session_id", live.id)
+	            .order("created_at", { ascending: true })
+	            .limit(100);
+	          if (cancelled) return;
+	          if (error) throw error;
+	          const rows = Array.isArray(data) ? data : [];
+	          const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+	          if (userIds.length) {
+	            const { data: profiles } = await supabase.from("profiles").select("user_id, handle, display_name").in("user_id", userIds);
+	            if (cancelled) return;
+	            (profiles || []).forEach((p) => profilesRef.current.set(p.user_id, p));
+	          }
+	          if (cancelled) return;
+	          setEvents(rows.map((r) => ({ ...r, user: r.user_id ? profilesRef.current.get(r.user_id) || null : null })));
+	        } catch (err) {
+	          console.warn("live events load failed", err);
+	          toast("Couldn't load chat");
+	          setEvents([]);
+	        }
+	      })();
+	      return () => {
+	        cancelled = true;
+	      };
+	    }, [supabase, live?.id]);
+
+	    useEffect(() => {
+	      if (!supabase || !live?.id) return;
+	      const channel = supabase
+	        .channel(`rs-live-events-${live.id}`)
+	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "live_events", filter: `live_session_id=eq.${live.id}` }, async (payload) => {
+	          const ev = payload?.new || null;
+	          if (!ev?.id) return;
+	          let user = null;
+	          if (ev.user_id) {
+	            user = profilesRef.current.get(ev.user_id) || null;
+	            if (!user) {
+	              try {
+	                const { data: profile } = await supabase.from("profiles").select("user_id, handle, display_name").eq("user_id", ev.user_id).maybeSingle();
+	                if (profile?.user_id) {
+	                  profilesRef.current.set(profile.user_id, profile);
+	                  user = profile;
+	                }
+	              } catch {}
+	            }
+	          }
+	          setEvents((prev) => [...prev, { ...ev, user }]);
+	        })
+	        .subscribe();
+	      return () => {
+	        try {
+	          channel.unsubscribe().catch(() => {});
+	        } catch {}
+	      };
+	    }, [supabase, live?.id]);
+
+	    useEffect(() => {
+	      requestAnimationFrame(() => {
+	        try {
+	          scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" });
+	        } catch {}
+	      });
+	    }, [events.length]);
+
+	    const hostLabel = live?.host ? (String(live.host).startsWith("@") ? String(live.host) : `@${live.host}`) : "live";
+	    const subtitle = [hostLabel, live?.room_name ? `room: ${live.room_name}` : null, "voice streaming soon"].filter(Boolean).join(" · ");
+
+	    const send = async () => {
+	      const t = String(text || "").trim();
+	      if (!t) return;
+	      if (!userId) return toast("Sign in to chat");
+	      if (!supabase || !live?.id) return;
+	      setText("");
+	      try {
+	        const { error } = await supabase.from("live_events").insert({
+	          live_session_id: live.id,
+	          user_id: userId,
+	          type: "chat",
+	          payload: { text: t },
+	        });
+	        if (error) throw error;
+	      } catch (err) {
+	        console.warn("chat send failed", err);
+	        toast("Couldn't send");
+	      }
+	    };
+
+	    return html`<div>
+	      <div className="section">
+	        <div className="section-head">
+	          <div className="section-title">${live?.title || "Live Room"}</div>
+	          <button className="pill" onClick=${onClose} type="button">Back</button>
+	        </div>
+	        <div className="card">
+	          <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${subtitle}</div>
+	        </div>
+	      </div>
+
+	      <div className="section">
+	        <div className="card strong" ref=${scrollerRef} style=${{ maxHeight: "46vh", overflowY: "auto" }}>
+	          <div className="list">
+	            ${(events || []).map((ev) => {
+	              const who = ev?.user?.handle ? `@${ev.user.handle}` : ev?.user_id ? ev.user_id.slice(0, 8) : "anon";
+	              const when = ev?.created_at ? new Date(ev.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+	              const title = [who, when].filter(Boolean).join(" · ");
+	              const body =
+	                ev.type === "chat"
+	                  ? String(ev?.payload?.text || "").trim() || "…"
+	                  : ev.type === "now_playing"
+	                    ? [ev?.payload?.title || ev?.payload?.track || "Now playing", ev?.payload?.artist || null].filter(Boolean).join(" · ")
+	                    : ev.type || "event";
+	              return html`<div className="item chat-item">
+	                <div className="thumb"></div>
+	                <div className="grow meta">
+	                  <div className="t">${title}</div>
+	                  <div className="s">${body}</div>
+	                </div>
+	              </div>`;
+	            })}
+	            ${(!events || !events.length) && html`<div className="card"><div style=${{ color: "var(--muted)" }}>No messages yet.</div></div>`}
+	          </div>
+	        </div>
+	      </div>
+
+	      <div className="section">
+	        <div className="row" style=${{ alignItems: "stretch" }}>
+	          <div className="field grow">
+	            <input
+	              value=${text}
+	              onChange=${(e) => setText(e.target.value)}
+	              placeholder=${userId ? "Message…" : "Sign in to chat"}
+	              onKeyDown=${(e) => {
+	                if (e.key === "Enter") send();
+	              }}
+	            />
+	          </div>
+	          <button className=${cx("pill", userId ? "primary" : "ghost")} disabled=${!userId || !String(text || "").trim()} onClick=${send} type="button">
+	            Send
+	          </button>
+	        </div>
+	      </div>
+	    </div>`;
+	  }
+
+	  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, likes, toggleLike, onLoad, toast }) {
+	    const [mode, setMode] = useState("new");
+	    const [q, setQ] = useState("");
+	    const [rows, setRows] = useState(SAMPLE_SESSIONS);
+	    const [liveRoom, setLiveRoom] = useState(null);
+	    const [following, setFollowing] = useState(() => new Set());
+	    const [presence, setPresence] = useState(() => new Map());
+	    const [inbox, setInbox] = useState([]);
+	    const userId = supabaseSession?.user?.id || "";
+
+	    if (liveRoom) {
+	      return html`<${LiveRoomScreen} supabase=${supabase} live=${liveRoom} userId=${userId} onClose=${() => setLiveRoom(null)} toast=${toast} />`;
+	    }
 
     const fetchPresence = async (hostIds) => {
       if (!supabase || !userId || !hostIds.length) {
@@ -789,18 +953,14 @@
                 const active = p && isActive(p);
                 const canFollow = !!(userId && s?.host_user_id && s.host_user_id !== userId);
                 const followed = canFollow && following.has(s.host_user_id);
-                if (isLive) {
-                  const started = s?.started_at ? new Date(s.started_at).toLocaleString() : null;
-                  const join = () => {
-                    const room = s?.room_name || "";
-                    if (!room) return toast("No room yet");
-                    try {
-                      navigator.clipboard?.writeText(room).catch(() => {});
-                    } catch {}
-                    toast("Room copied");
-                  };
-                  return html`<div className="item">
-                    <div className="thumb"></div>
+	                if (isLive) {
+	                  const started = s?.started_at ? new Date(s.started_at).toLocaleString() : null;
+	                  const join = () => {
+	                    if (!s?.id) return toast("No live id");
+	                    setLiveRoom(s);
+	                  };
+	                  return html`<div className="item">
+	                    <div className="thumb"></div>
                     <div className="grow meta">
                       <div className="t">${s.title || "Live"}</div>
                       <div className="s">

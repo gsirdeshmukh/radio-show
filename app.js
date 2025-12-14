@@ -78,12 +78,16 @@
 		    inbox: [],
 		    inboxLoading: false,
 		    inboxChannel: null,
-		    live: [],
-		    liveLoading: false,
-		    currentLive: null,
-    likedSessions: new Set(),
-    currentSessionId: null,
-    appleMusic: {
+			    live: [],
+			    liveLoading: false,
+			    currentLive: null,
+			    liveRoom: null,
+			    liveRoomEvents: [],
+			    liveRoomProfiles: new Map(),
+			    liveRoomChannel: null,
+	    likedSessions: new Set(),
+	    currentSessionId: null,
+	    appleMusic: {
       instance: null,
       authorized: false,
       userToken: null,
@@ -192,6 +196,13 @@
 		    dom.sessionsStatus = document.getElementById("sessions-status");
 		    dom.goLiveBtn = document.getElementById("go-live-btn");
 		    dom.endLiveBtn = document.getElementById("end-live-btn");
+		    dom.liveRoom = document.getElementById("live-room");
+		    dom.liveRoomTitle = document.getElementById("live-room-title");
+		    dom.liveRoomSubtitle = document.getElementById("live-room-subtitle");
+		    dom.liveRoomClose = document.getElementById("live-room-close");
+		    dom.liveRoomEvents = document.getElementById("live-room-events");
+		    dom.liveRoomMessage = document.getElementById("live-room-message");
+		    dom.liveRoomSend = document.getElementById("live-room-send");
 		    dom.profileHandleInput = document.getElementById("profile-handle");
 		    dom.profileZipInput = document.getElementById("profile-zip");
 		    dom.profileLocationOptIn = document.getElementById("profile-location-optin");
@@ -358,12 +369,22 @@
 		        loadSupabaseSessions();
 		      });
 		    }
-		    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
-		    dom.goLiveBtn && dom.goLiveBtn.addEventListener("click", startLive);
-		    dom.endLiveBtn && dom.endLiveBtn.addEventListener("click", endLive);
-		    dom.profileSaveBtn && dom.profileSaveBtn.addEventListener("click", saveProfileSettings);
-		    dom.followBtn && dom.followBtn.addEventListener("click", followByHandle);
-		    }
+			    dom.sessionsRefresh && dom.sessionsRefresh.addEventListener("click", loadSupabaseSessions);
+			    dom.goLiveBtn && dom.goLiveBtn.addEventListener("click", startLive);
+			    dom.endLiveBtn && dom.endLiveBtn.addEventListener("click", endLive);
+			    dom.liveRoomClose && dom.liveRoomClose.addEventListener("click", closeLiveRoom);
+			    dom.liveRoomSend && dom.liveRoomSend.addEventListener("click", sendLiveRoomChat);
+			    if (dom.liveRoomMessage) {
+			      dom.liveRoomMessage.addEventListener("keydown", (e) => {
+			        if (e.key === "Enter") {
+			          e.preventDefault();
+			          sendLiveRoomChat();
+			        }
+			      });
+			    }
+			    dom.profileSaveBtn && dom.profileSaveBtn.addEventListener("click", saveProfileSettings);
+			    dom.followBtn && dom.followBtn.addEventListener("click", followByHandle);
+			    }
 	    document.addEventListener("keydown", handleHotkeys);
     dom.status &&
       (dom.status.title =
@@ -1077,13 +1098,14 @@
 			    return token ? { Authorization: `Bearer ${token}` } : {};
 			  }
 
-			  async function handleSupabaseAuthedState(authed) {
-			    if (!authed) {
-			      stopPresenceHeartbeat();
-			      unsubscribeInbox();
-			      state.following = new Set();
-			      state.presence = new Map();
-			      state.inbox = [];
+				  async function handleSupabaseAuthedState(authed) {
+				    if (!authed) {
+				      closeLiveRoom();
+				      stopPresenceHeartbeat();
+				      unsubscribeInbox();
+				      state.following = new Set();
+				      state.presence = new Map();
+				      state.inbox = [];
 			      return;
 			    }
 			    await ensureOwnProfileSettings();
@@ -1781,10 +1803,10 @@
 		    }
 		  }
 
-		  function renderSupabaseLive() {
-		    if (!dom.sessionsList) return;
-		    dom.sessionsList.innerHTML = "";
-		    const rows = state.live || [];
+			  function renderSupabaseLive() {
+			    if (!dom.sessionsList) return;
+			    dom.sessionsList.innerHTML = "";
+			    const rows = state.live || [];
 		    if (!rows.length) {
 		      const li = document.createElement("li");
 		      const meta = document.createElement("div");
@@ -1837,23 +1859,208 @@
 		      li.appendChild(meta);
 		      li.appendChild(actions);
 		      dom.sessionsList.appendChild(li);
-		    });
-		  }
+			    });
+			  }
 
-		  function joinLive(row) {
-		    const room = row?.room_name || "";
-		    if (!room) {
-		      alert("No room name on this live session yet.");
-		      return;
-		    }
-		    const msg = `Live join scaffold (voice streaming next):\\nroom: ${room}`;
-		    try {
-		      navigator.clipboard?.writeText(room).catch(() => {});
-		    } catch {
-		      // ignore
-		    }
-		    alert(msg);
-		  }
+			  function openLiveRoom(row) {
+			    if (!row?.id) {
+			      alert("No live session id.");
+			      return;
+			    }
+			    state.liveRoom = row;
+			    state.liveRoomEvents = [];
+			    state.liveRoomProfiles = new Map();
+				    if (dom.liveRoomMessage) dom.liveRoomMessage.value = "";
+				    if (dom.liveRoom) dom.liveRoom.classList.remove("collapsed");
+				    renderLiveRoom();
+				    renderLiveRoomEvents({ scrollToBottom: false });
+				    loadLiveRoomEvents(row.id).catch(() => {});
+				    subscribeLiveRoom(row.id);
+				  }
+
+			  function closeLiveRoom() {
+			    unsubscribeLiveRoom();
+			    state.liveRoom = null;
+			    state.liveRoomEvents = [];
+			    state.liveRoomProfiles = new Map();
+			    if (dom.liveRoom) dom.liveRoom.classList.add("collapsed");
+			  }
+
+			  function renderLiveRoom() {
+			    const row = state.liveRoom;
+			    if (!row) return;
+			    if (dom.liveRoomTitle) dom.liveRoomTitle.textContent = row.title || "Live Room";
+			    const bits = [];
+			    if (row.host) {
+			      const hostLabel = String(row.host);
+			      bits.push(hostLabel.startsWith("@") ? hostLabel : `@${hostLabel}`);
+			    } else {
+			      bits.push("live");
+			    }
+			    if (row.room_name) bits.push(`room: ${row.room_name}`);
+			    bits.push("voice streaming soon");
+			    if (dom.liveRoomSubtitle) dom.liveRoomSubtitle.textContent = bits.filter(Boolean).join(" · ");
+			    if (dom.liveRoomSend) dom.liveRoomSend.disabled = !(state.supabaseSession?.user?.id || "");
+			  }
+
+			  function renderLiveRoomEvents({ scrollToBottom } = { scrollToBottom: true }) {
+			    if (!dom.liveRoomEvents) return;
+			    dom.liveRoomEvents.innerHTML = "";
+			    const events = state.liveRoomEvents || [];
+			    if (!events.length) {
+			      const li = document.createElement("li");
+			      const meta = document.createElement("div");
+			      meta.className = "meta";
+			      const title = document.createElement("div");
+			      title.className = "title";
+			      title.textContent = "No messages yet.";
+			      const sub = document.createElement("div");
+			      sub.className = "subtitle";
+			      sub.textContent = "Say hi, or just listen.";
+			      meta.appendChild(title);
+			      meta.appendChild(sub);
+			      li.appendChild(meta);
+			      dom.liveRoomEvents.appendChild(li);
+			      return;
+			    }
+			    events.forEach((ev) => {
+			      const li = document.createElement("li");
+			      const meta = document.createElement("div");
+			      meta.className = "meta";
+			      const title = document.createElement("div");
+			      title.className = "title";
+			      const who = ev?.user?.handle ? `@${ev.user.handle}` : ev?.user_id ? ev.user_id.slice(0, 8) : "anon";
+			      const when = ev?.created_at ? new Date(ev.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+			      title.textContent = [who, when].filter(Boolean).join(" · ");
+			      const sub = document.createElement("div");
+			      sub.className = "subtitle";
+			      if (ev.type === "chat") {
+			        sub.textContent = String(ev?.payload?.text || "").trim() || "…";
+			      } else if (ev.type === "now_playing") {
+			        const t = ev?.payload?.title || ev?.payload?.track || "Now playing";
+			        const a = ev?.payload?.artist || "";
+			        sub.textContent = [t, a].filter(Boolean).join(" · ");
+			      } else {
+			        sub.textContent = ev.type || "event";
+			      }
+			      meta.appendChild(title);
+			      meta.appendChild(sub);
+			      li.appendChild(meta);
+			      dom.liveRoomEvents.appendChild(li);
+			    });
+			    if (scrollToBottom) {
+			      requestAnimationFrame(() => {
+			        try {
+			          dom.liveRoomEvents.scrollTop = dom.liveRoomEvents.scrollHeight;
+			        } catch {
+			          // ignore
+			        }
+			      });
+			    }
+			  }
+
+			  async function loadLiveRoomEvents(liveId) {
+			    const client = initSupabaseClient();
+			    if (!client || !liveId) return;
+			    try {
+			      const { data, error } = await client
+			        .from("live_events")
+			        .select("id, live_session_id, user_id, type, payload, created_at")
+			        .eq("live_session_id", liveId)
+			        .order("created_at", { ascending: true })
+			        .limit(100);
+			      if (error) throw error;
+			      const rows = Array.isArray(data) ? data : [];
+			      const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+			      if (userIds.length) {
+			        const { data: profiles } = await client.from("profiles").select("user_id, handle, display_name").in("user_id", userIds);
+			        (profiles || []).forEach((p) => state.liveRoomProfiles.set(p.user_id, p));
+			      }
+			      state.liveRoomEvents = rows.map((r) => ({ ...r, user: r.user_id ? state.liveRoomProfiles.get(r.user_id) || null : null }));
+			      renderLiveRoomEvents({ scrollToBottom: true });
+			    } catch (err) {
+			      console.warn("loadLiveRoomEvents failed", err);
+			      state.liveRoomEvents = [];
+			      renderLiveRoomEvents({ scrollToBottom: false });
+			    }
+			  }
+
+			  function unsubscribeLiveRoom() {
+			    if (state.liveRoomChannel) {
+			      try {
+			        state.liveRoomChannel.unsubscribe().catch(() => {});
+			      } catch {
+			        // ignore
+			      }
+			      state.liveRoomChannel = null;
+			    }
+			  }
+
+			  function subscribeLiveRoom(liveId) {
+			    unsubscribeLiveRoom();
+			    const client = initSupabaseClient();
+			    if (!client || !liveId) return;
+			    try {
+			      state.liveRoomChannel = client
+			        .channel(`rs-live-events-${liveId}`)
+			        .on(
+			          "postgres_changes",
+			          { event: "INSERT", schema: "public", table: "live_events", filter: `live_session_id=eq.${liveId}` },
+			          async (payload) => {
+			            const ev = payload?.new || null;
+			            if (!ev?.id) return;
+			            if (ev.user_id && !state.liveRoomProfiles.has(ev.user_id)) {
+			              try {
+			                const { data: profile } = await client
+			                  .from("profiles")
+			                  .select("user_id, handle, display_name")
+			                  .eq("user_id", ev.user_id)
+			                  .maybeSingle();
+			                if (profile?.user_id) state.liveRoomProfiles.set(profile.user_id, profile);
+			              } catch {
+			                // ignore
+			              }
+			            }
+			            state.liveRoomEvents.push({ ...ev, user: ev.user_id ? state.liveRoomProfiles.get(ev.user_id) || null : null });
+			            renderLiveRoomEvents({ scrollToBottom: true });
+			          },
+			        )
+			        .subscribe();
+			    } catch (err) {
+			      console.warn("subscribeLiveRoom failed", err);
+			      state.liveRoomChannel = null;
+			    }
+			  }
+
+			  async function sendLiveRoomChat() {
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    const liveId = state.liveRoom?.id || "";
+			    if (!client || !uid) {
+			      alert("Sign in with Supabase to chat.");
+			      return;
+			    }
+			    if (!liveId) return;
+			    const text = String(dom.liveRoomMessage?.value || "").trim();
+			    if (!text) return;
+			    if (dom.liveRoomMessage) dom.liveRoomMessage.value = "";
+			    try {
+			      const { error } = await client.from("live_events").insert({
+			        live_session_id: liveId,
+			        user_id: uid,
+			        type: "chat",
+			        payload: { text },
+			      });
+			      if (error) throw error;
+			    } catch (err) {
+			      console.warn("sendLiveRoomChat failed", err);
+			      alert(`Could not send: ${err?.message || "unknown error"}`);
+			    }
+			  }
+
+			  function joinLive(row) {
+			    openLiveRoom(row);
+			  }
 
 		  async function startLive() {
 		    const client = initSupabaseClient();
