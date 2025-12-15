@@ -198,6 +198,49 @@
     <audio id="live-room-audio" playsinline></audio>
   </section>
 
+  <div class="sheet-overlay hidden" id="profile-sheet-overlay" role="dialog" aria-modal="true" aria-label="Profile">
+    <div class="sheet" id="profile-sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title" id="profile-sheet-title">Profile</div>
+          <div class="sheet-subtitle" id="profile-sheet-subtitle">—</div>
+        </div>
+        <button id="profile-sheet-close" class="ghost small" type="button">Close</button>
+      </div>
+      <div class="row wrap">
+        <button id="profile-sheet-follow" class="ghost small" type="button">Follow</button>
+        <button id="profile-sheet-message" class="ghost small" type="button">Message</button>
+      </div>
+      <div class="subhead">Recent Sessions</div>
+      <ul id="profile-sheet-sessions" class="list compact-list"></ul>
+    </div>
+  </div>
+
+  <div class="sheet-overlay hidden" id="send-sheet-overlay" role="dialog" aria-modal="true" aria-label="Send session">
+    <div class="sheet" id="send-sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title" id="send-sheet-title">Send</div>
+          <div class="sheet-subtitle" id="send-sheet-subtitle">Choose a recipient</div>
+        </div>
+        <button id="send-sheet-close" class="ghost small" type="button">Close</button>
+      </div>
+      <div class="row wrap">
+        <label class="field">
+          <span>To</span>
+          <input id="send-sheet-to" type="text" placeholder="@handle" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Note</span>
+          <input id="send-sheet-note" type="text" placeholder="optional" autocomplete="off" />
+        </label>
+        <button id="send-sheet-send" class="primary" type="button">Send</button>
+      </div>
+      <div class="subhead">Suggestions</div>
+      <ul id="send-sheet-results" class="list compact-list"></ul>
+    </div>
+  </div>
+
   <div class="listen-bar" id="listen-bar">
     <div class="bar-cover" id="bar-cover"></div>
     <div class="bar-meta">

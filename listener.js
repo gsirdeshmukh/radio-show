@@ -39,18 +39,30 @@
 		    supabaseSession: null,
 			    sessionsStatsChannel: null,
 			    supabaseAuthed: false,
-			    following: new Set(),
-			    followers: new Set(),
-			    peopleQuery: "",
-			    peopleResults: [],
-			    peoplePresence: new Map(),
-			    peopleSearchTimer: null,
-			    presence: new Map(),
-			    presenceTimer: null,
-			    inbox: [],
-			    inboxLoading: false,
-			    inboxChannel: null,
-			    inboxUnreadCount: 0,
+				    following: new Set(),
+				    followers: new Set(),
+				    followsChannel: null,
+				    peopleQuery: "",
+				    peopleResults: [],
+				    peoplePresence: new Map(),
+				    peopleSearchTimer: null,
+				    presence: new Map(),
+				    presenceTimer: null,
+				    presenceViewerTimer: null,
+				    profileSheetUserId: null,
+				    profileSheetProfile: null,
+				    profileSheetPresence: null,
+				    profileSheetSessions: [],
+				    profileSheetLoading: false,
+				    profileSheetToken: null,
+				    sendSheetSessionId: null,
+				    sendSheetRecipients: [],
+				    sendSheetSelectedUserId: null,
+				    sendSheetLoading: false,
+				    inbox: [],
+				    inboxLoading: false,
+				    inboxChannel: null,
+				    inboxUnreadCount: 0,
 			    live: [],
 			    liveLoading: false,
 			    currentLive: null,
@@ -82,15 +94,20 @@
 	    renderPeopleResults();
 	    loadSupabaseSessions();
 
-	    document.addEventListener("visibilitychange", () => {
-	      if (document.hidden) {
-	        stopPresenceHeartbeat();
-	      } else if (state.supabaseAuthed) {
-	        startPresenceHeartbeat();
-	      }
-	    });
-	    window.addEventListener("pagehide", () => stopPresenceHeartbeat());
-	  });
+		    document.addEventListener("visibilitychange", () => {
+		      if (document.hidden) {
+		        stopPresenceHeartbeat();
+		        stopPresenceViewerRefresh();
+		      } else if (state.supabaseAuthed) {
+		        startPresenceHeartbeat();
+		        startPresenceViewerRefresh();
+		      }
+		    });
+		    window.addEventListener("pagehide", () => {
+		      stopPresenceHeartbeat();
+		      stopPresenceViewerRefresh();
+		    });
+		  });
 
   function assignDom() {
     dom.tokenInput = document.getElementById("token-input");
@@ -123,12 +140,27 @@
 	    dom.profileSaveBtn = document.getElementById("profile-save-btn");
 	    dom.followHandleInput = document.getElementById("follow-handle");
 	    dom.followBtn = document.getElementById("follow-btn");
-	    dom.peopleSearchInput = document.getElementById("people-search");
-	    dom.peopleClearBtn = document.getElementById("people-clear");
-	    dom.peopleResults = document.getElementById("people-results");
-	    dom.sessionsPanel = document.getElementById("sessions-panel");
-    dom.sessionsList = document.getElementById("sessions-list");
-    dom.sessionsSearch = document.getElementById("sessions-search");
+		    dom.peopleSearchInput = document.getElementById("people-search");
+		    dom.peopleClearBtn = document.getElementById("people-clear");
+		    dom.peopleResults = document.getElementById("people-results");
+		    dom.profileSheetOverlay = document.getElementById("profile-sheet-overlay");
+		    dom.profileSheetTitle = document.getElementById("profile-sheet-title");
+		    dom.profileSheetSubtitle = document.getElementById("profile-sheet-subtitle");
+		    dom.profileSheetClose = document.getElementById("profile-sheet-close");
+		    dom.profileSheetFollow = document.getElementById("profile-sheet-follow");
+		    dom.profileSheetMessage = document.getElementById("profile-sheet-message");
+		    dom.profileSheetSessions = document.getElementById("profile-sheet-sessions");
+		    dom.sendSheetOverlay = document.getElementById("send-sheet-overlay");
+		    dom.sendSheetTitle = document.getElementById("send-sheet-title");
+		    dom.sendSheetSubtitle = document.getElementById("send-sheet-subtitle");
+		    dom.sendSheetClose = document.getElementById("send-sheet-close");
+		    dom.sendSheetTo = document.getElementById("send-sheet-to");
+		    dom.sendSheetNote = document.getElementById("send-sheet-note");
+		    dom.sendSheetSend = document.getElementById("send-sheet-send");
+		    dom.sendSheetResults = document.getElementById("send-sheet-results");
+		    dom.sessionsPanel = document.getElementById("sessions-panel");
+	    dom.sessionsList = document.getElementById("sessions-list");
+	    dom.sessionsSearch = document.getElementById("sessions-search");
     dom.sessionsFeed = document.getElementById("sessions-feed");
     dom.sessionsSort = document.getElementById("sessions-sort");
     dom.sessionsRefresh = document.getElementById("sessions-refresh");
@@ -496,19 +528,54 @@
 		        schedulePeopleSearch();
 		      });
 		    }
-		    if (dom.peopleClearBtn) {
-		      dom.peopleClearBtn.addEventListener("click", () => {
-		        state.peopleQuery = "";
-		        if (dom.peopleSearchInput) dom.peopleSearchInput.value = "";
-		        state.peopleResults = [];
-		        state.peoplePresence = new Map();
-		        renderPeopleResults();
-		      });
-		    }
-		    dom.barPlay.addEventListener("click", playShow);
-		    dom.barStop.addEventListener("click", stopShow);
-		    dom.barProgress.addEventListener("click", handleSeek);
-		  }
+			    if (dom.peopleClearBtn) {
+			      dom.peopleClearBtn.addEventListener("click", () => {
+			        state.peopleQuery = "";
+			        if (dom.peopleSearchInput) dom.peopleSearchInput.value = "";
+			        state.peopleResults = [];
+			        state.peoplePresence = new Map();
+			        renderPeopleResults();
+			      });
+			    }
+			    dom.profileSheetClose && dom.profileSheetClose.addEventListener("click", closeProfileSheet);
+			    if (dom.profileSheetOverlay) {
+			      dom.profileSheetOverlay.addEventListener("click", (e) => {
+			        if (e.target === dom.profileSheetOverlay) closeProfileSheet();
+			      });
+			    }
+				    dom.profileSheetMessage &&
+				      dom.profileSheetMessage.addEventListener("click", () => {
+				        alert("DMs coming soon — for now, send sessions from the feed.");
+				      });
+				    dom.sendSheetClose && dom.sendSheetClose.addEventListener("click", closeSendSheet);
+				    if (dom.sendSheetOverlay) {
+				      dom.sendSheetOverlay.addEventListener("click", (e) => {
+				        if (e.target === dom.sendSheetOverlay) closeSendSheet();
+				      });
+				    }
+				    dom.sendSheetSend && dom.sendSheetSend.addEventListener("click", sendFromSendSheet);
+				    if (dom.sendSheetTo) {
+				      dom.sendSheetTo.addEventListener("input", () => {
+				        state.sendSheetSelectedUserId = null;
+				        renderSendSheet();
+				      });
+				      dom.sendSheetTo.addEventListener("keydown", (e) => {
+				        if (e.key === "Enter") {
+				          e.preventDefault();
+				          sendFromSendSheet();
+				        }
+				      });
+				    }
+				    document.addEventListener("keydown", (e) => {
+				      if (e.key === "Escape") {
+				        closeSendSheet();
+				        closeProfileSheet();
+				      }
+				    });
+				    dom.barPlay.addEventListener("click", playShow);
+				    dom.barStop.addEventListener("click", stopShow);
+				    dom.barProgress.addEventListener("click", handleSeek);
+				  }
 
 	  async function supabaseSignIn() {
 	    const client = initSupabaseClient();
@@ -545,30 +612,34 @@
 	    }
 	  }
 
-			  async function handleSupabaseAuthedState(authed) {
-			    if (!authed) {
-			      closeLiveRoom();
-			      stopPresenceHeartbeat();
-			      unsubscribeInbox();
-			      state.following = new Set();
-			      state.followers = new Set();
-			      state.presence = new Map();
-		      state.inbox = [];
-		      state.inboxUnreadCount = 0;
-		      updateInboxFeedLabel();
-		      state.live = [];
-		      state.currentLive = null;
-		      loadSupabaseSessions().catch(() => {});
-		      return;
-		    }
-		    await ensureOwnProfileSettings();
-		    await loadFollowing();
-		    await loadFollowers();
-		    startPresenceHeartbeat();
-		    subscribeInbox();
-		    refreshInboxUnreadCount().catch(() => {});
-		    loadSupabaseSessions().catch(() => {});
-		  }
+				  async function handleSupabaseAuthedState(authed) {
+				    if (!authed) {
+				      closeLiveRoom();
+				      stopPresenceHeartbeat();
+				      stopPresenceViewerRefresh();
+				      unsubscribeInbox();
+				      unsubscribeFollows();
+				      state.following = new Set();
+				      state.followers = new Set();
+				      state.presence = new Map();
+			      state.inbox = [];
+			      state.inboxUnreadCount = 0;
+			      updateInboxFeedLabel();
+			      state.live = [];
+			      state.currentLive = null;
+			      loadSupabaseSessions().catch(() => {});
+			      return;
+			    }
+			    await ensureOwnProfileSettings();
+			    await loadFollowing();
+			    await loadFollowers();
+			    subscribeFollows();
+			    startPresenceHeartbeat();
+			    startPresenceViewerRefresh();
+			    subscribeInbox();
+			    refreshInboxUnreadCount().catch(() => {});
+			    loadSupabaseSessions().catch(() => {});
+			  }
 
 	  function normalizeHandle(raw) {
 	    return String(raw || "")
@@ -865,14 +936,21 @@
 		        sub.appendChild(document.createTextNode(" "));
 		        sub.appendChild(badge);
 		      }
-		      meta.appendChild(title);
-		      meta.appendChild(sub);
-		      const actions = document.createElement("div");
-		      actions.className = "actions";
+			      meta.appendChild(title);
+			      meta.appendChild(sub);
+			      const actions = document.createElement("div");
+			      actions.className = "actions";
+			      if (p?.user_id) {
+			        const viewBtn = document.createElement("button");
+			        viewBtn.type = "button";
+			        viewBtn.textContent = "View";
+			        viewBtn.addEventListener("click", () => openProfileSheet(p.user_id));
+			        actions.appendChild(viewBtn);
+			      }
 
-		      if (p?.user_id && uid && p.user_id !== uid) {
-		        const followBtn = document.createElement("button");
-		        followBtn.type = "button";
+			      if (p?.user_id && uid && p.user_id !== uid) {
+			        const followBtn = document.createElement("button");
+			        followBtn.type = "button";
 		        followBtn.textContent = followButtonLabel(p.user_id);
 		        followBtn.addEventListener("click", async () => {
 		          try {
@@ -899,13 +977,17 @@
 		    });
 		  }
 
-		  async function sendSessionToHandle(sessionId) {
-		    const client = initSupabaseClient();
-		    const uid = state.supabaseSession?.user?.id || "";
-		    if (!client || !uid) {
-		      alert("Sign in with Supabase to send.");
-	      return;
-	    }
+			  async function sendSessionToHandle(sessionId) {
+			    if (dom.sendSheetOverlay) {
+			      openSendSheet({ sessionId });
+			      return;
+			    }
+			    const client = initSupabaseClient();
+			    const uid = state.supabaseSession?.user?.id || "";
+			    if (!client || !uid) {
+			      alert("Sign in with Supabase to send.");
+		      return;
+		    }
 	    const raw = prompt("Send to handle (e.g. @someone):") || "";
 	    const handle = normalizeHandle(raw);
 	    if (!handle) return;
@@ -924,16 +1006,204 @@
 	      });
 	      if (insErr) throw insErr;
 	      alert(`Sent to @${handle}`);
-	    } catch (err) {
-	      console.warn("sendSessionToHandle failed", err);
-	      alert(`Could not send: ${err?.message || "unknown error"}`);
-	    }
-	  }
+		    } catch (err) {
+		      console.warn("sendSessionToHandle failed", err);
+		      alert(`Could not send: ${err?.message || "unknown error"}`);
+		    }
+		  }
 
-	  function isPresenceActive(row) {
-	    if (!row?.last_seen_at) return false;
-	    const last = Date.parse(row.last_seen_at);
-	    if (!Number.isFinite(last)) return false;
+		  function closeProfileSheet() {
+		    state.profileSheetToken = null;
+		    state.profileSheetUserId = null;
+		    state.profileSheetProfile = null;
+		    state.profileSheetPresence = null;
+		    state.profileSheetSessions = [];
+		    state.profileSheetLoading = false;
+		    if (dom.profileSheetOverlay) dom.profileSheetOverlay.classList.add("hidden");
+		  }
+
+		  async function openProfileSheet(userId) {
+		    const client = initSupabaseClient();
+		    if (!client) {
+		      alert("Supabase not configured");
+		      return;
+		    }
+		    const uid = String(userId || "").trim();
+		    if (!uid) return;
+
+		    state.profileSheetUserId = uid;
+		    state.profileSheetProfile = null;
+		    state.profileSheetPresence = null;
+		    state.profileSheetSessions = [];
+		    state.profileSheetLoading = true;
+		    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		    state.profileSheetToken = token;
+		    if (dom.profileSheetOverlay) dom.profileSheetOverlay.classList.remove("hidden");
+		    renderProfileSheet();
+
+		    try {
+		      await loadFollowing();
+		      await loadFollowers();
+		    } catch {
+		      // ignore
+		    }
+		    if (token !== state.profileSheetToken) return;
+		    renderProfileSheet();
+
+		    try {
+		      const [{ data: profile }, { data: presence }, { data: sessions }] = await Promise.all([
+		        client.from("profiles").select("user_id, handle, display_name").eq("user_id", uid).maybeSingle(),
+		        client.from("profile_presence").select("user_id, last_seen_at, status").eq("user_id", uid).maybeSingle(),
+		        client
+		          .from("sessions")
+		          .select(
+		            "id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, visibility, created_at, session_stats(plays, downloads, likes)",
+		          )
+		          .eq("host_user_id", uid)
+		          .order("created_at", { ascending: false })
+		          .limit(20),
+		      ]);
+		      if (token !== state.profileSheetToken) return;
+		      state.profileSheetProfile = profile || null;
+		      state.profileSheetPresence = presence || null;
+		      const rows = Array.isArray(sessions) ? sessions : [];
+		      state.profileSheetSessions = rows.map((row) => ({
+		        id: row.id,
+		        slug: row.slug,
+		        title: row.title,
+		        host_user_id: row.host_user_id,
+		        host: row.host_name,
+		        genre: row.genre,
+		        tags: row.tags,
+		        cover_url: row.cover_url,
+		        url: row.storage_path,
+		        plays: row.session_stats?.[0]?.plays ?? 0,
+		        downloads: row.session_stats?.[0]?.downloads ?? 0,
+		        likes: row.session_stats?.[0]?.likes ?? 0,
+		        created_at: row.created_at,
+		        visibility: row.visibility,
+		      }));
+		      state.profileSheetLoading = false;
+		      renderProfileSheet();
+		    } catch (err) {
+		      console.warn("profile sheet load failed", err);
+		      if (token !== state.profileSheetToken) return;
+		      state.profileSheetLoading = false;
+		      state.profileSheetSessions = [];
+		      renderProfileSheet();
+		    }
+		  }
+
+		  function renderProfileSheet() {
+		    if (!dom.profileSheetOverlay) return;
+		    const uid = state.profileSheetUserId;
+		    if (!uid) {
+		      dom.profileSheetOverlay.classList.add("hidden");
+		      return;
+		    }
+
+		    const p = state.profileSheetProfile || null;
+		    const title = p?.display_name || (p?.handle ? `@${p.handle}` : "Profile");
+		    if (dom.profileSheetTitle) dom.profileSheetTitle.textContent = title;
+		    const bits = [];
+		    if (p?.handle) bits.push(`@${p.handle}`);
+		    if (p?.display_name) bits.push(p.display_name);
+		    const presence = state.profileSheetPresence;
+		    if (presence && isPresenceActive(presence)) bits.push("active");
+		    if (dom.profileSheetSubtitle) dom.profileSheetSubtitle.textContent = bits.filter(Boolean).join(" · ") || uid.slice(0, 8);
+
+		    const me = state.supabaseSession?.user?.id || "";
+		    if (dom.profileSheetFollow) {
+		      const canFollow = !!me && uid !== me;
+		      dom.profileSheetFollow.style.display = canFollow ? "" : "none";
+		      dom.profileSheetFollow.disabled = !canFollow;
+		      dom.profileSheetFollow.textContent = followButtonLabel(uid);
+		      dom.profileSheetFollow.onclick = async () => {
+		        try {
+		          if (state.following.has(uid)) await unfollowUserId(uid);
+		          else await followUserId(uid);
+		          await loadFollowing();
+		          await loadFollowers();
+		          renderProfileSheet();
+		        } catch (err) {
+		          alert(`Follow failed: ${err?.message || "unknown error"}`);
+		        }
+		      };
+		    }
+
+		    if (!dom.profileSheetSessions) return;
+		    dom.profileSheetSessions.innerHTML = "";
+		    if (state.profileSheetLoading) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const t = document.createElement("div");
+		      t.className = "title";
+		      t.textContent = "Loading…";
+		      const s = document.createElement("div");
+		      s.className = "subtitle";
+		      s.textContent = "Fetching profile and recent sessions.";
+		      meta.appendChild(t);
+		      meta.appendChild(s);
+		      li.appendChild(meta);
+		      dom.profileSheetSessions.appendChild(li);
+		      return;
+		    }
+
+		    const sessions = Array.isArray(state.profileSheetSessions) ? state.profileSheetSessions : [];
+		    if (!sessions.length) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const t = document.createElement("div");
+		      t.className = "title";
+		      t.textContent = "No sessions yet.";
+		      const s = document.createElement("div");
+		      s.className = "subtitle";
+		      s.textContent = "Check back later.";
+		      meta.appendChild(t);
+		      meta.appendChild(s);
+		      li.appendChild(meta);
+		      dom.profileSheetSessions.appendChild(li);
+		      return;
+		    }
+
+		    sessions.forEach((row) => {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const t = document.createElement("div");
+		      t.className = "title";
+		      t.textContent = row.title || row.slug || row.id || "Untitled";
+		      const s = document.createElement("div");
+		      s.className = "subtitle";
+		      s.textContent = formatSessionSubtitle(row);
+		      meta.appendChild(t);
+		      meta.appendChild(s);
+		      const actions = document.createElement("div");
+		      actions.className = "actions";
+		      if (row?.id) {
+		        const sendBtn = document.createElement("button");
+		        sendBtn.type = "button";
+		        sendBtn.textContent = "Send";
+		        sendBtn.addEventListener("click", () => sendSessionToHandle(row.id));
+		        actions.appendChild(sendBtn);
+		      }
+		      const loadBtn = document.createElement("button");
+		      loadBtn.type = "button";
+		      loadBtn.textContent = "Load";
+		      loadBtn.addEventListener("click", () => loadSessionEntry(row));
+		      actions.appendChild(loadBtn);
+		      li.appendChild(meta);
+		      li.appendChild(actions);
+		      dom.profileSheetSessions.appendChild(li);
+		    });
+		  }
+
+		  function isPresenceActive(row) {
+		    if (!row?.last_seen_at) return false;
+		    const last = Date.parse(row.last_seen_at);
+		    if (!Number.isFinite(last)) return false;
 	    return Date.now() - last < 70_000;
 	  }
 
@@ -984,30 +1254,110 @@
 	    state.presenceTimer = setInterval(() => upsertPresence().catch(() => {}), 30_000);
 	  }
 
-	  function stopPresenceHeartbeat() {
-	    if (state.presenceTimer) {
-	      clearInterval(state.presenceTimer);
-	      state.presenceTimer = null;
-	    }
-	    upsertPresence({ offline: true }).catch(() => {});
-	  }
+		  function stopPresenceHeartbeat() {
+		    if (state.presenceTimer) {
+		      clearInterval(state.presenceTimer);
+		      state.presenceTimer = null;
+		    }
+		    upsertPresence({ offline: true }).catch(() => {});
+		  }
 
-	  function unsubscribeInbox() {
-	    if (state.inboxChannel) {
-	      try {
-	        state.inboxChannel.unsubscribe().catch(() => {});
-	      } catch {
+		  async function refreshPresenceForCurrentFeed() {
+		    await refreshPresenceForSessions();
+		    const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+		    if (feed === "live" || feed === "live_nearby") renderSupabaseLive();
+		    else renderSupabaseSessions();
+		  }
+
+		  function startPresenceViewerRefresh() {
+		    stopPresenceViewerRefresh();
+		    refreshPresenceForCurrentFeed().catch(() => {});
+		    state.presenceViewerTimer = setInterval(() => refreshPresenceForCurrentFeed().catch(() => {}), 25_000);
+		  }
+
+		  function stopPresenceViewerRefresh() {
+		    if (state.presenceViewerTimer) {
+		      clearInterval(state.presenceViewerTimer);
+		      state.presenceViewerTimer = null;
+		    }
+		  }
+
+		  function unsubscribeInbox() {
+		    if (state.inboxChannel) {
+		      try {
+		        state.inboxChannel.unsubscribe().catch(() => {});
+		      } catch {
 	        // ignore
 	      }
-	      state.inboxChannel = null;
-	    }
-	  }
+		      state.inboxChannel = null;
+		    }
+		  }
 
-	  function subscribeInbox() {
-	    unsubscribeInbox();
-	    const client = initSupabaseClient();
-	    const uid = state.supabaseSession?.user?.id || "";
-	    if (!client || !uid) return;
+		  function unsubscribeFollows() {
+		    if (state.followsChannel) {
+		      try {
+		        state.followsChannel.unsubscribe().catch(() => {});
+		      } catch {
+		        // ignore
+		      }
+		      state.followsChannel = null;
+		    }
+		  }
+
+		  function subscribeFollows() {
+		    unsubscribeFollows();
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) return;
+		    const rerender = () => {
+		      const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+		      if (feed === "following" || feed === "friends") {
+		        loadSupabaseSessions();
+		      } else if (feed === "live" || feed === "live_nearby") {
+		        renderSupabaseLive();
+		      } else if (feed === "inbox") {
+		        renderSupabaseInbox();
+		      } else {
+		        renderSupabaseSessions();
+		      }
+		      renderPeopleResults();
+		      if (state.profileSheetUserId) renderProfileSheet();
+		    };
+		    try {
+		      state.followsChannel = client
+		        .channel("rs-follows")
+		        .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `follower_id=eq.${uid}` }, (payload) => {
+		          const row = payload?.new || null;
+		          if (row?.followed_id) state.following.add(row.followed_id);
+		          rerender();
+		        })
+		        .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `follower_id=eq.${uid}` }, (payload) => {
+		          const row = payload?.old || null;
+		          if (row?.followed_id) state.following.delete(row.followed_id);
+		          rerender();
+		        })
+		        .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `followed_id=eq.${uid}` }, (payload) => {
+		          const row = payload?.new || null;
+		          if (row?.follower_id) state.followers.add(row.follower_id);
+		          rerender();
+		        })
+		        .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `followed_id=eq.${uid}` }, (payload) => {
+		          const row = payload?.old || null;
+		          if (row?.follower_id) state.followers.delete(row.follower_id);
+		          rerender();
+		        })
+		        .subscribe();
+		    } catch (err) {
+		      console.warn("follows subscribe failed", err);
+		      state.followsChannel = null;
+		    }
+		  }
+
+		  function subscribeInbox() {
+		    unsubscribeInbox();
+		    const client = initSupabaseClient();
+		    const uid = state.supabaseSession?.user?.id || "";
+		    if (!client || !uid) return;
 	    try {
 	      state.inboxChannel = client
 	        .channel("rs-inbox")
@@ -1379,34 +1729,44 @@
 	    }
 	  }
 
-	  function renderSupabaseSessions() {
-	    if (!dom.sessionsList) return;
-	    dom.sessionsList.innerHTML = "";
-	    const sessions = state.sessions || [];
-	    const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
-	    const zip = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim();
-	    if (!sessions.length) {
-	      const li = document.createElement("li");
-	      const meta = document.createElement("div");
-	      meta.className = "meta";
-	      const title = document.createElement("div");
-	      title.className = "title";
-	      if (feed === "nearby" && !zip) {
-	        title.textContent = "Add a zip code in Account.";
-	      } else if (feed === "following") {
-	        title.textContent = "Following feed is empty.";
-	      } else {
-	        title.textContent = "No sessions yet.";
-	      }
-	      const sub = document.createElement("div");
-	      sub.className = "subtitle";
-	      sub.textContent = "Publish a show to Supabase or switch feeds.";
-	      meta.appendChild(title);
-	      meta.appendChild(sub);
-	      li.appendChild(meta);
-	      dom.sessionsList.appendChild(li);
-	      return;
-	    }
+		  function renderSupabaseSessions() {
+		    if (!dom.sessionsList) return;
+		    dom.sessionsList.innerHTML = "";
+		    const sessions = state.sessions || [];
+		    const feed = state.sessionsFeed || dom.sessionsFeed?.value || "public";
+		    const zip = String(dom.profileZipInput?.value || localStorage.getItem(PROFILE_ZIP_KEY) || "").trim();
+		    if (!sessions.length) {
+		      const li = document.createElement("li");
+		      const meta = document.createElement("div");
+		      meta.className = "meta";
+		      const title = document.createElement("div");
+		      title.className = "title";
+		      if (feed === "nearby" && !zip) {
+		        title.textContent = "Add a zip code in Account.";
+		      } else if (feed === "following") {
+		        title.textContent = "Following feed is empty.";
+		      } else if (feed === "friends") {
+		        title.textContent = "Friends feed is empty.";
+		      } else {
+		        title.textContent = "No sessions yet.";
+		      }
+		      const sub = document.createElement("div");
+		      sub.className = "subtitle";
+		      if (feed === "nearby" && !zip) {
+		        sub.textContent = "Account → Location, then refresh.";
+		      } else if (feed === "following") {
+		        sub.textContent = "Follow someone in Account → People.";
+		      } else if (feed === "friends") {
+		        sub.textContent = "Mutual follows show up here.";
+		      } else {
+		        sub.textContent = "Publish a show to Supabase or switch feeds.";
+		      }
+		      meta.appendChild(title);
+		      meta.appendChild(sub);
+		      li.appendChild(meta);
+		      dom.sessionsList.appendChild(li);
+		      return;
+		    }
 	    sessions.forEach((row) => {
 	      const li = document.createElement("li");
 	      if (row?.id) li.dataset.sessionId = row.id;
@@ -1468,17 +1828,24 @@
 	        });
 	        actions.appendChild(followBtn);
 	      }
-	      if (row?.id) {
-	        const sendBtn = document.createElement("button");
-	        sendBtn.type = "button";
-	        sendBtn.textContent = "Send";
-	        sendBtn.addEventListener("click", () => sendSessionToHandle(row.id));
-	        actions.appendChild(sendBtn);
-	      }
-	      const loadBtn = document.createElement("button");
-	      loadBtn.textContent = "Load";
-	      loadBtn.addEventListener("click", () => loadSessionEntry(row));
-	      actions.appendChild(loadBtn);
+		      if (row?.id) {
+		        const sendBtn = document.createElement("button");
+		        sendBtn.type = "button";
+		        sendBtn.textContent = "Send";
+		        sendBtn.addEventListener("click", () => sendSessionToHandle(row.id));
+		        actions.appendChild(sendBtn);
+		      }
+		      if (row?.host_user_id) {
+		        const profileBtn = document.createElement("button");
+		        profileBtn.type = "button";
+		        profileBtn.textContent = "Profile";
+		        profileBtn.addEventListener("click", () => openProfileSheet(row.host_user_id));
+		        actions.appendChild(profileBtn);
+		      }
+		      const loadBtn = document.createElement("button");
+		      loadBtn.textContent = "Load";
+		      loadBtn.addEventListener("click", () => loadSessionEntry(row));
+		      actions.appendChild(loadBtn);
 	      li.appendChild(meta);
 	      li.appendChild(actions);
 	      dom.sessionsList.appendChild(li);
@@ -1609,29 +1976,36 @@
 		      joinBtn.addEventListener("click", () => joinLive(row));
 		      actions.appendChild(joinBtn);
 		      const uid = state.supabaseSession?.user?.id || "";
-		      if (row?.host_user_id && uid && row.host_user_id !== uid) {
-		        const followBtn = document.createElement("button");
-		        followBtn.type = "button";
-		        followBtn.textContent = followButtonLabel(row.host_user_id);
-		        followBtn.addEventListener("click", async () => {
-		          try {
-		            if (state.following.has(row.host_user_id)) {
-		              await unfollowUserId(row.host_user_id);
-		            } else {
-		              await followUserId(row.host_user_id);
-		            }
-		            followBtn.textContent = followButtonLabel(row.host_user_id);
-		          } catch (err) {
-		            alert(`Follow failed: ${err?.message || "unknown error"}`);
-		          }
-		        });
-		        actions.appendChild(followBtn);
-		      }
-		      li.appendChild(meta);
-		      li.appendChild(actions);
-		      dom.sessionsList.appendChild(li);
-		    });
-		  }
+			      if (row?.host_user_id && uid && row.host_user_id !== uid) {
+			        const followBtn = document.createElement("button");
+			        followBtn.type = "button";
+			        followBtn.textContent = followButtonLabel(row.host_user_id);
+			        followBtn.addEventListener("click", async () => {
+			          try {
+			            if (state.following.has(row.host_user_id)) {
+			              await unfollowUserId(row.host_user_id);
+			            } else {
+			              await followUserId(row.host_user_id);
+			            }
+			            followBtn.textContent = followButtonLabel(row.host_user_id);
+			          } catch (err) {
+			            alert(`Follow failed: ${err?.message || "unknown error"}`);
+			          }
+			        });
+			        actions.appendChild(followBtn);
+			      }
+			      if (row?.host_user_id) {
+			        const profileBtn = document.createElement("button");
+			        profileBtn.type = "button";
+			        profileBtn.textContent = "Profile";
+			        profileBtn.addEventListener("click", () => openProfileSheet(row.host_user_id));
+			        actions.appendChild(profileBtn);
+			      }
+			      li.appendChild(meta);
+			      li.appendChild(actions);
+			      dom.sessionsList.appendChild(li);
+			    });
+			  }
 
 			  function openLiveRoom(row) {
 			    if (!row?.id) {

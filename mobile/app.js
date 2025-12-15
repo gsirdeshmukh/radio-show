@@ -1048,113 +1048,263 @@
 		        </div>
 		      </div>
 		      <audio ref=${audioRef} playsInline style=${{ display: "none" }}></audio>
-		    </div>`;
-		  }
+			    </div>`;
+			  }
 
-		  function SessionsScreen({ supabase, supabaseSession, authHeaders, zip, zipOptIn, likes, toggleLike, onLoad, toast }) {
-		    const [mode, setMode] = useState("new");
-		    const [liveScope, setLiveScope] = useState("all");
-		    const [followScope, setFollowScope] = useState("following");
-		    const [q, setQ] = useState("");
-		    const [rows, setRows] = useState(SAMPLE_SESSIONS);
-		    const [liveRoom, setLiveRoom] = useState(null);
-		    const [following, setFollowing] = useState(() => new Set());
-		    const [followers, setFollowers] = useState(() => new Set());
-		    const [presence, setPresence] = useState(() => new Map());
-		    const [inbox, setInbox] = useState([]);
-		    const userId = supabaseSession?.user?.id || "";
+			  function UserSheet({ supabase, viewerUserId, userId, onClose, following, followers, toggleFollow, onLoad, onSend, toast }) {
+			    const [profile, setProfile] = useState(null);
+			    const [presence, setPresence] = useState(null);
+			    const [sessions, setSessions] = useState([]);
+			    const [loading, setLoading] = useState(false);
+
+			    const isActive = (p) => {
+			      const last = Date.parse(p?.last_seen_at || "");
+			      return Number.isFinite(last) && Date.now() - last < 70_000;
+			    };
+
+			    useEffect(() => {
+			      let ignore = false;
+			      if (!supabase || !userId) {
+			        setProfile(null);
+			        setPresence(null);
+			        setSessions([]);
+			        setLoading(false);
+			        return;
+			      }
+			      setLoading(true);
+			      (async () => {
+			        try {
+			          const wantsPresence = !!viewerUserId;
+			          const [{ data: p }, { data: pres }, { data: sess }] = await Promise.all([
+			            supabase.from("profiles").select("user_id, handle, display_name").eq("user_id", userId).maybeSingle(),
+			            wantsPresence
+			              ? supabase.from("profile_presence").select("user_id, last_seen_at, status").eq("user_id", userId).maybeSingle()
+			              : Promise.resolve({ data: null }),
+			            supabase
+			              .from("sessions")
+			              .select(
+			                "id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, visibility, created_at, session_stats(plays, downloads, likes)",
+			              )
+			              .eq("host_user_id", userId)
+			              .order("created_at", { ascending: false })
+			              .limit(20),
+			          ]);
+			          if (ignore) return;
+			          setProfile(p || null);
+			          setPresence(pres || null);
+			          const rows = Array.isArray(sess) ? sess : [];
+			          setSessions(
+			            rows.map((row) => ({
+			              id: row.id,
+			              slug: row.slug,
+			              title: row.title,
+			              host_user_id: row.host_user_id,
+			              host: row.host_name,
+			              genre: row.genre,
+			              tags: row.tags,
+			              cover_url: row.cover_url,
+			              url: row.storage_path,
+			              plays: row.session_stats?.[0]?.plays ?? 0,
+			              downloads: row.session_stats?.[0]?.downloads ?? 0,
+			              likes: row.session_stats?.[0]?.likes ?? 0,
+			              created_at: row.created_at,
+			              visibility: row.visibility,
+			            })),
+			          );
+			        } catch (err) {
+			          console.warn("UserSheet load failed", err);
+			          if (!ignore) {
+			            setProfile(null);
+			            setPresence(null);
+			            setSessions([]);
+			            toast("Couldn't load profile");
+			          }
+			        } finally {
+			          if (!ignore) setLoading(false);
+			        }
+			      })();
+			      return () => {
+			        ignore = true;
+			      };
+			    }, [supabase, userId, viewerUserId]);
+
+			    const p = profile || {};
+			    const title = p?.display_name || (p?.handle ? `@${p.handle}` : "Profile");
+			    const subtitleBits = [];
+			    if (p?.handle) subtitleBits.push(`@${p.handle}`);
+			    if (p?.display_name) subtitleBits.push(p.display_name);
+			    if (presence && isActive(presence)) subtitleBits.push("active");
+
+			    const isFollowing = !!following?.has?.(userId);
+			    const isFriend = isFollowing && !!followers?.has?.(userId);
+			    const followLabel = isFriend ? "Friend ✓" : isFollowing ? "Following" : "Follow";
+			    const canFollow = !!viewerUserId && userId !== viewerUserId;
+
+			    const sessionSubtitle = (s) => {
+			      const bits = [];
+			      if (s?.genre) bits.push(s.genre);
+			      const stats = [];
+			      if (typeof s?.plays === "number") stats.push(`${s.plays} plays`);
+			      if (typeof s?.likes === "number") stats.push(`${s.likes} likes`);
+			      if (stats.length) bits.push(stats.join(" · "));
+			      return bits.join(" · ");
+			    };
+
+			    return html`<div
+			      className="sheet-overlay"
+			      onClick=${(e) => {
+			        if (e.target === e.currentTarget) onClose();
+			      }}
+			    >
+			      <div className="sheet">
+			        <div className="sheet-head">
+			          <div>
+			            <div className="sheet-title">${title}</div>
+			            <div className="sheet-subtitle">
+			              ${subtitleBits.filter(Boolean).join(" · ") || userId.slice(0, 8)}
+			              ${presence && isActive(presence)
+			                ? html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+			                    <span className="presence-dot"></span><span className="presence-label">active</span>
+			                  </span>`
+			                : ""}
+			            </div>
+			          </div>
+			          <button className="pill" onClick=${onClose} type="button">Close</button>
+			        </div>
+
+			        <div className="row" style=${{ justifyContent: "space-between", flexWrap: "wrap" }}>
+			          ${canFollow
+			            ? html`<button className=${cx("pill", isFollowing ? "ghost" : "primary")} onClick=${() => toggleFollow(userId)} type="button">
+			                ${followLabel}
+			              </button>`
+			            : html`<div className="chip">${viewerUserId ? "—" : "browse"}</div>`}
+			          <button
+			            className="pill ghost"
+			            onClick=${() => toast("DMs coming soon — send sessions for now")}
+			            type="button"
+			          >
+			            Message
+			          </button>
+			        </div>
+
+			        <div className="divider"></div>
+			        <div className="section-head" style=${{ marginBottom: "10px" }}>
+			          <div className="section-title" style=${{ fontSize: "14px" }}>Recent Sessions</div>
+			        </div>
+
+			        <div className="list">
+			          ${loading &&
+			          html`<div className="card">
+			            <div style=${{ color: "var(--muted)" }}>Loading…</div>
+			          </div>`}
+			          ${!loading && (!sessions || !sessions.length) && html`<div className="card"><div style=${{ color: "var(--muted)" }}>No sessions yet.</div></div>`}
+			          ${!loading &&
+			          (sessions || []).map(
+			            (s) => html`<div className="item">
+			              <div className="thumb"></div>
+			              <div className="grow meta">
+			                <div className="t">${s.title || s.slug || "Untitled"}</div>
+			                <div className="s">${sessionSubtitle(s)}</div>
+			              </div>
+			              <div style=${{ display: "flex", gap: "10px" }}>
+			                ${s.id &&
+			                html`<button className="pill icon" onClick=${() => onSend(s.id)} aria-label="Send" type="button">
+			                  <${Icon} name="plus" />
+			                </button>`}
+			                <button className="pill icon primary" onClick=${() => onLoad(s)} aria-label="Load" type="button">
+			                  <${Icon} name="play" />
+			                </button>
+			              </div>
+			            </div>`,
+			          )}
+			        </div>
+			      </div>
+			    </div>`;
+			  }
+
+			  function SessionsScreen({
+			    supabase,
+			    supabaseSession,
+			    authHeaders,
+			    zip,
+			    zipOptIn,
+			    likes,
+			    toggleLike,
+			    onLoad,
+			    toast,
+			    following,
+			    followers,
+			    toggleFollow,
+			    followVersion,
+			  }) {
+			    const [mode, setMode] = useState("new");
+			    const [liveScope, setLiveScope] = useState("all");
+			    const [followScope, setFollowScope] = useState("following");
+			    const [q, setQ] = useState("");
+			    const [rows, setRows] = useState(SAMPLE_SESSIONS);
+			    const [liveRoom, setLiveRoom] = useState(null);
+			    const [profileUserId, setProfileUserId] = useState(null);
+			    const [presence, setPresence] = useState(() => new Map());
+			    const [inbox, setInbox] = useState([]);
+			    const userId = supabaseSession?.user?.id || "";
 
 	    if (liveRoom) {
 	      return html`<${LiveRoomScreen} supabase=${supabase} live=${liveRoom} userId=${userId} onClose=${() => setLiveRoom(null)} toast=${toast} />`;
 	    }
 
-    const fetchPresence = async (hostIds) => {
-      if (!supabase || !userId || !hostIds.length) {
-        setPresence(new Map());
-        return;
-      }
-      try {
-        const { data, error } = await supabase.from("profile_presence").select("user_id, last_seen_at, status").in("user_id", hostIds);
-        if (error) throw error;
-        setPresence(new Map((data || []).map((r) => [r.user_id, r])));
-      } catch {
-        setPresence(new Map());
-      }
-    };
-
-	    const loadFollowing = async () => {
-	      if (!supabase || !userId) {
-	        setFollowing(new Set());
-	        return [];
-	      }
-	      try {
-	        const { data, error } = await supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000);
-	        if (error) throw error;
-	        const ids = (data || []).map((r) => r.followed_id).filter(Boolean);
-	        setFollowing(new Set(ids));
-	        return ids;
-	      } catch {
-	        setFollowing(new Set());
-	        return [];
-	      }
-	    };
-
-	    const loadFollowers = async () => {
-	      if (!supabase || !userId) {
-	        setFollowers(new Set());
-	        return [];
-	      }
-	      try {
-	        const { data, error } = await supabase.from("follows").select("follower_id").eq("followed_id", userId).limit(5000);
-	        if (error) throw error;
-	        const ids = (data || []).map((r) => r.follower_id).filter(Boolean);
-	        setFollowers(new Set(ids));
-	        return ids;
-	      } catch {
-	        setFollowers(new Set());
-	        return [];
-	      }
-	    };
-
-	    const isActive = (p) => {
-	      const last = Date.parse(p?.last_seen_at || "");
-	      return Number.isFinite(last) && Date.now() - last < 70_000;
-	    };
-
-	    useEffect(() => {
-	      if (!supabase || !userId) {
-	        setFollowing(new Set());
-	        setFollowers(new Set());
+	    const fetchPresence = async (hostIds) => {
+	      if (!supabase || !userId || !hostIds.length) {
+	        setPresence(new Map());
 	        return;
 	      }
-	      loadFollowing();
-	      loadFollowers();
-	      // eslint-disable-next-line react-hooks/exhaustive-deps
-	    }, [supabase, userId]);
+	      try {
+	        const { data, error } = await supabase.from("profile_presence").select("user_id, last_seen_at, status").in("user_id", hostIds);
+	        if (error) throw error;
+	        setPresence(new Map((data || []).map((r) => [r.user_id, r])));
+	      } catch {
+	        setPresence(new Map());
+	      }
+	    };
 
-	    useEffect(() => {
-	      if (!supabase || !userId) return;
-	      const channel = supabase
-	        .channel(`rs-inbox-${userId}`)
-	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${userId}` }, (payload) => {
-	          const it = payload?.new || null;
-	          if (!it?.id) return;
-	          setInbox((prev) => {
-	            const arr = Array.isArray(prev) ? prev : [];
-	            if (arr.some((x) => x?.id === it.id)) return arr;
-	            return [{ ...it, from: null }, ...arr];
-	          });
-	        })
-	        .subscribe();
-	      return () => {
-	        try {
-	          channel.unsubscribe().catch(() => {});
-	        } catch {}
-	      };
-	    }, [supabase, userId]);
+		    const isActive = (p) => {
+		      const last = Date.parse(p?.last_seen_at || "");
+		      return Number.isFinite(last) && Date.now() - last < 70_000;
+		    };
 
-	    useEffect(() => {
-	      let ignore = false;
+		    useEffect(() => {
+		      if (!supabase || !userId) return;
+		      const channel = supabase
+		        .channel(`rs-inbox-${userId}`)
+		        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${userId}` }, (payload) => {
+		          const it = payload?.new || null;
+		          if (!it?.id) return;
+		          setInbox((prev) => {
+		            const arr = Array.isArray(prev) ? prev : [];
+		            if (arr.some((x) => x?.id === it.id)) return arr;
+		            return [{ ...it, from: null }, ...arr];
+		          });
+		        })
+		        .subscribe();
+		      return () => {
+		        try {
+		          channel.unsubscribe().catch(() => {});
+		        } catch {}
+		      };
+		    }, [supabase, userId]);
+
+		    useEffect(() => {
+		      if (!supabase || !userId) return;
+		      if (mode === "inbox") return;
+		      const timer = window.setInterval(() => {
+		        const hostIds = Array.from(new Set((rows || []).map((x) => x?.host_user_id).filter(Boolean)));
+		        if (!hostIds.length) return;
+		        fetchPresence(hostIds);
+		      }, 25_000);
+		      return () => window.clearInterval(timer);
+		    }, [supabase, userId, mode, rows]);
+
+		    useEffect(() => {
+		      let ignore = false;
 
 	      const run = async () => {
         if (!supabase) {
@@ -1192,18 +1342,22 @@
             return;
           }
 
-	          if (mode === "following") {
-	            let ids = await loadFollowing();
-	            if (followScope === "friends") {
-	              const rev = await loadFollowers();
-	              const revSet = new Set(rev);
-	              ids = ids.filter((id) => revSet.has(id));
-	            }
-	            if (!ids.length) {
-	              if (!ignore) setRows([]);
-	              if (!ignore) setPresence(new Map());
-	              return;
-	            }
+		          if (mode === "following") {
+		            if (!userId) {
+		              if (!ignore) setRows([]);
+		              if (!ignore) setPresence(new Map());
+		              return;
+		            }
+		            let ids = Array.from(following || []);
+		            if (followScope === "friends") {
+		              const revSet = followers instanceof Set ? followers : new Set();
+		              ids = ids.filter((id) => revSet.has(id));
+		            }
+		            if (!ids.length) {
+		              if (!ignore) setRows([]);
+		              if (!ignore) setPresence(new Map());
+		              return;
+		            }
             let qy = supabase
               .from("sessions")
               .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
@@ -1273,35 +1427,12 @@
 	      return () => {
 	        ignore = true;
 	      };
-	    }, [supabase, userId, mode, liveScope, followScope, q, zip, zipOptIn]);
+		    }, [supabase, userId, mode, liveScope, followScope, q, zip, zipOptIn, followVersion]);
 
-	    const toggleFollow = async (targetUserId) => {
-	      if (!supabase || !userId) {
-	        toast("Sign in to follow");
-	        return;
-	      }
-      if (!targetUserId || targetUserId === userId) return;
-      const next = new Set(Array.from(following));
-      try {
-        if (next.has(targetUserId)) {
-          const { error } = await supabase.from("follows").delete().eq("follower_id", userId).eq("followed_id", targetUserId);
-          if (error) throw error;
-          next.delete(targetUserId);
-        } else {
-          const { error } = await supabase.from("follows").insert({ follower_id: userId, followed_id: targetUserId });
-          if (error) throw error;
-          next.add(targetUserId);
-        }
-        setFollowing(next);
-      } catch {
-        toast("Follow failed");
-      }
-	    };
-
-	    const markInboxRead = async (itemId) => {
-	      if (!supabase || !userId || !itemId) return;
-	      try {
-	        await supabase
+		    const markInboxRead = async (itemId) => {
+		      if (!supabase || !userId || !itemId) return;
+		      try {
+		        await supabase
 	          .from("inbox_items")
 	          .update({ status: "read", read_at: new Date().toISOString() })
 	          .eq("id", itemId)
@@ -1453,33 +1584,39 @@
 	                    if (!s?.id) return toast("No live id");
 	                    setLiveRoom(s);
 	                  };
-	                  return html`<div className="item">
-	                    <div className="thumb"></div>
-                    <div className="grow meta">
-                      <div className="t">${s.title || "Live"}</div>
-	                      <div className="s">
-	                        ${[s.host || "Unknown", started, s.zip || null].filter(Boolean).join(" · ")}
-	                        ${active &&
-	                        html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
-	                          <span className="presence-dot"></span><span className="presence-label">active</span>
-	                        </span>`}
-                      </div>
-	                      <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
-	                        ${canFollow &&
-	                        html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
-	                          ${followLabel}
-	                        </button>`}
-	                        <div className="chip">${s.visibility || "followers"}</div>
+		                  return html`<div className="item">
+		                    <div className="thumb"></div>
+	                    <div className="grow meta">
+	                      <div className="t">${s.title || "Live"}</div>
+		                      <div className="s">
+		                        ${[s.host || "Unknown", started, s.zip || null].filter(Boolean).join(" · ")}
+		                        ${active &&
+		                        html`<span style=${{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+		                          <span className="presence-dot"></span><span className="presence-label">active</span>
+		                        </span>`}
 	                      </div>
+		                      <div className="row" style=${{ marginTop: "10px", justifyContent: "space-between", flexWrap: "wrap" }}>
+		                        ${canFollow &&
+		                        html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
+		                          ${followLabel}
+		                        </button>`}
+		                        <div className="chip">${s.visibility || "followers"}</div>
+		                      </div>
+		                    </div>
+	                    <div style=${{ display: "flex", gap: "10px" }}>
+	                      ${s?.host_user_id &&
+	                      html`<button className="pill icon" onClick=${() => setProfileUserId(s.host_user_id)} aria-label="Profile" type="button">
+	                        <${Icon} name="user" />
+	                      </button>`}
+	                      <button className="pill icon primary" onClick=${join} aria-label="Join" type="button">
+	                        <${Icon} name="play" />
+	                      </button>
 	                    </div>
-                    <button className="pill icon primary" onClick=${join} aria-label="Join" type="button">
-                      <${Icon} name="play" />
-                    </button>
-                  </div>`;
-                }
-                return html`<div className="item">
-                  <div className="thumb"></div>
-                  <div className="grow meta">
+	                  </div>`;
+	                }
+	                return html`<div className="item">
+	                  <div className="thumb"></div>
+	                  <div className="grow meta">
                     <div className="t">${s.title || s.slug || "Untitled"}</div>
                     <div className="s">
                       ${subtitle(s)}
@@ -1499,39 +1636,64 @@
 	                      html`<button className=${cx("pill", followed ? "ghost" : "primary")} onClick=${() => toggleFollow(s.host_user_id)} type="button">
 	                        ${followLabel}
 	                      </button>`}
-	                    </div>
+		                    </div>
+		                  </div>
+	                  <div style=${{ display: "flex", gap: "10px" }}>
+	                    ${s?.host_user_id &&
+	                    html`<button className="pill icon" onClick=${() => setProfileUserId(s.host_user_id)} aria-label="Profile" type="button">
+	                      <${Icon} name="user" />
+	                    </button>`}
+	                    ${s.id &&
+	                    html`<button className="pill icon" onClick=${() => sendToHandle(s.id)} aria-label="Send" type="button">
+	                      <${Icon} name="plus" />
+	                    </button>`}
+	                    <button className="pill icon primary" onClick=${() => onLoad(s)} aria-label="Load" type="button">
+	                      <${Icon} name="play" />
+	                    </button>
 	                  </div>
-                  <div style=${{ display: "flex", gap: "10px" }}>
-                    ${s.id &&
-                    html`<button className="pill icon" onClick=${() => sendToHandle(s.id)} aria-label="Send" type="button">
-                      <${Icon} name="plus" />
-                    </button>`}
-                    <button className="pill icon primary" onClick=${() => onLoad(s)} aria-label="Load" type="button">
-                      <${Icon} name="play" />
-                    </button>
-                  </div>
-                </div>`;
+	                </div>`;
               })}
-	              ${(!rows || !rows.length) &&
-	              html`<div className="card">
-	                <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>
-	                  ${mode === "nearby" && !zip
-	                    ? "Add a zip code in Profile to see nearby sessions."
-	                    : mode === "live" && liveScope === "near" && (!zip || !zipOptIn)
-	                      ? "Enable Location + add a zip in Profile to see nearby live."
-	                      : "No results."}
-	                </div>
-	              </div>`}
-	            </div>
-	          </div>`}
-	    </div>`;
-	  }
+		              ${(!rows || !rows.length) &&
+		              html`<div className="card">
+		                <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>
+		                  ${mode === "nearby" && !zip
+		                    ? "Add a zip code in Profile to see nearby sessions."
+		                    : mode === "live" && liveScope === "near" && (!zip || !zipOptIn)
+		                      ? "Enable Location + add a zip in Profile to see nearby live."
+		                      : mode === "live"
+		                        ? "No live streams right now."
+		                        : mode === "following" && !userId
+		                          ? "Sign in to see Following and Friends."
+		                          : mode === "following" && followScope === "friends"
+		                            ? "Friends feed is empty — mutual follows show up here."
+		                            : mode === "following"
+		                              ? "Following feed is empty — follow someone first."
+		                              : "No results."}
+		                </div>
+		              </div>`}
+		            </div>
+			          </div>`}
+		      ${profileUserId &&
+		      html`<${UserSheet}
+		        supabase=${supabase}
+		        viewerUserId=${userId}
+		        userId=${profileUserId}
+		        onClose=${() => setProfileUserId(null)}
+		        following=${following}
+		        followers=${followers}
+		        toggleFollow=${toggleFollow}
+		        onLoad=${onLoad}
+		        onSend=${sendToHandle}
+		        toast=${toast}
+		      />`}
+		    </div>`;
+		  }
 
-  function ProfileScreen({
-    theme,
-    setTheme,
-    accent,
-    setAccent,
+	  function ProfileScreen({
+	    theme,
+	    setTheme,
+	    accent,
+	    setAccent,
     services,
     toast,
     supabase,
@@ -1552,45 +1714,26 @@
     zipOptIn,
     setZipOptIn,
     onSaveProfile,
-    myLive,
-    onGoLive,
-    onEndLive,
-  }) {
-    const userId = supabaseSession?.user?.id || "";
-    const [peopleQ, setPeopleQ] = useState("");
-    const [people, setPeople] = useState([]);
-    const [following, setFollowing] = useState(() => new Set());
-    const [followers, setFollowers] = useState(() => new Set());
-    const [peoplePresence, setPeoplePresence] = useState(() => new Map());
+	    myLive,
+	    onGoLive,
+	    onEndLive,
+	    following,
+	    followers,
+	    toggleFollow,
+	  }) {
+	    const userId = supabaseSession?.user?.id || "";
+	    const [peopleQ, setPeopleQ] = useState("");
+	    const [people, setPeople] = useState([]);
+	    const [peoplePresence, setPeoplePresence] = useState(() => new Map());
 
-    const isActive = (p) => {
-      const last = Date.parse(p?.last_seen_at || "");
-      return Number.isFinite(last) && Date.now() - last < 70_000;
-    };
+	    const isActive = (p) => {
+	      const last = Date.parse(p?.last_seen_at || "");
+	      return Number.isFinite(last) && Date.now() - last < 70_000;
+	    };
 
-    useEffect(() => {
-      if (!supabase || !userId) {
-        setFollowing(new Set());
-        setFollowers(new Set());
-        return;
-      }
-      (async () => {
-        try {
-          const [{ data: fwd }, { data: rev }] = await Promise.all([
-            supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000),
-            supabase.from("follows").select("follower_id").eq("followed_id", userId).limit(5000),
-          ]);
-          setFollowing(new Set((fwd || []).map((r) => r.followed_id).filter(Boolean)));
-          setFollowers(new Set((rev || []).map((r) => r.follower_id).filter(Boolean)));
-        } catch {
-          // ignore
-        }
-      })();
-    }, [supabase, userId]);
-
-    useEffect(() => {
-      let ignore = false;
-      const q = String(peopleQ || "").trim().toLowerCase();
+	    useEffect(() => {
+	      let ignore = false;
+	      const q = String(peopleQ || "").trim().toLowerCase();
       if (!supabase) {
         setPeople([]);
         setPeoplePresence(new Map());
@@ -1636,31 +1779,11 @@
       return () => {
         ignore = true;
       };
-    }, [supabase, userId, peopleQ]);
+	    }, [supabase, userId, peopleQ]);
 
-    const toggleFollow = async (targetUserId) => {
-      if (!supabase || !userId) return toast("Sign in to follow");
-      if (!targetUserId || targetUserId === userId) return;
-      const next = new Set(Array.from(following));
-      try {
-        if (next.has(targetUserId)) {
-          const { error } = await supabase.from("follows").delete().eq("follower_id", userId).eq("followed_id", targetUserId);
-          if (error) throw error;
-          next.delete(targetUserId);
-        } else {
-          const { error } = await supabase.from("follows").insert({ follower_id: userId, followed_id: targetUserId });
-          if (error) throw error;
-          next.add(targetUserId);
-        }
-        setFollowing(next);
-      } catch {
-        toast("Follow failed");
-      }
-    };
-
-    return html`<div className="fade-in">
-      <div className="section" style=${{ marginTop: 0 }}>
-        <div className="card">
+	    return html`<div className="fade-in">
+	      <div className="section" style=${{ marginTop: 0 }}>
+	        <div className="card">
           <div className="row">
             <div className="thumb" style=${{ borderRadius: "18px" }}></div>
             <div className="grow">
@@ -1948,12 +2071,97 @@
 	      };
 	    }, [supabase, supabaseSession?.user?.id]);
 
-    const authedEmail = supabaseSession?.user?.email || "";
-    const authedUserId = supabaseSession?.user?.id || "";
+	    const authedEmail = supabaseSession?.user?.email || "";
+	    const authedUserId = supabaseSession?.user?.id || "";
+	    const [following, setFollowing] = useState(() => new Set());
+	    const [followers, setFollowers] = useState(() => new Set());
+	    const [followVersion, setFollowVersion] = useState(0);
 
-    async function supabaseSignIn() {
-      if (!supabase) {
-        show("Add Supabase URL + anon key");
+	    useEffect(() => {
+	      let ignore = false;
+	      if (!supabase || !authedUserId) {
+	        setFollowing(new Set());
+	        setFollowers(new Set());
+	        setFollowVersion((v) => v + 1);
+	        return;
+	      }
+	      (async () => {
+	        try {
+	          const [{ data: fwd }, { data: rev }] = await Promise.all([
+	            supabase.from("follows").select("followed_id").eq("follower_id", authedUserId).limit(5000),
+	            supabase.from("follows").select("follower_id").eq("followed_id", authedUserId).limit(5000),
+	          ]);
+	          if (ignore) return;
+	          setFollowing(new Set((fwd || []).map((r) => r.followed_id).filter(Boolean)));
+	          setFollowers(new Set((rev || []).map((r) => r.follower_id).filter(Boolean)));
+	          setFollowVersion((v) => v + 1);
+	        } catch {
+	          if (!ignore) {
+	            setFollowing(new Set());
+	            setFollowers(new Set());
+	            setFollowVersion((v) => v + 1);
+	          }
+	        }
+	      })();
+	      return () => {
+	        ignore = true;
+	      };
+	    }, [supabase, authedUserId]);
+
+	    useEffect(() => {
+	      if (!supabase || !authedUserId) return;
+	      const uid = authedUserId;
+	      const channel = supabase
+	        .channel(`rs-follows-${uid}`)
+	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `follower_id=eq.${uid}` }, (payload) => {
+	          const id = payload?.new?.followed_id || "";
+	          if (!id) return;
+	          setFollowing((prev) => {
+	            const next = new Set(prev);
+	            next.add(id);
+	            return next;
+	          });
+	          setFollowVersion((v) => v + 1);
+	        })
+	        .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `follower_id=eq.${uid}` }, (payload) => {
+	          const id = payload?.old?.followed_id || "";
+	          if (!id) return;
+	          setFollowing((prev) => {
+	            const next = new Set(prev);
+	            next.delete(id);
+	            return next;
+	          });
+	          setFollowVersion((v) => v + 1);
+	        })
+	        .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `followed_id=eq.${uid}` }, (payload) => {
+	          const id = payload?.new?.follower_id || "";
+	          if (!id) return;
+	          setFollowers((prev) => {
+	            const next = new Set(prev);
+	            next.add(id);
+	            return next;
+	          });
+	          setFollowVersion((v) => v + 1);
+	        })
+	        .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `followed_id=eq.${uid}` }, (payload) => {
+	          const id = payload?.old?.follower_id || "";
+	          if (!id) return;
+	          setFollowers((prev) => {
+	            const next = new Set(prev);
+	            next.delete(id);
+	            return next;
+	          });
+	          setFollowVersion((v) => v + 1);
+	        });
+	      channel.subscribe();
+	      return () => {
+	        channel.unsubscribe().catch(() => {});
+	      };
+	    }, [supabase, authedUserId]);
+
+	    async function supabaseSignIn() {
+	      if (!supabase) {
+	        show("Add Supabase URL + anon key");
         return;
       }
       const email = String(supabaseEmail || "").trim();
@@ -2095,19 +2303,54 @@
       };
     }, []);
 
-    const toggleLike = (id) => {
-      setLikes((prev) => {
-        const set = new Set(Array.isArray(prev) ? prev : []);
-        if (set.has(id)) set.delete(id);
-        else set.add(id);
-        return Array.from(set);
-      });
-    };
+	    const toggleLike = (id) => {
+	      setLikes((prev) => {
+	        const set = new Set(Array.isArray(prev) ? prev : []);
+	        if (set.has(id)) set.delete(id);
+	        else set.add(id);
+	        return Array.from(set);
+	      });
+	    };
 
-    const onAddTrack = (t) => {
-      const seg = {
-        id: `${t.id}_${Date.now()}`,
-        type: "track",
+	    const toggleFollow = async (targetUserId) => {
+	      if (!supabase || !authedUserId) {
+	        show("Sign in to follow");
+	        return;
+	      }
+	      if (!targetUserId || targetUserId === authedUserId) return;
+	      const isFollowingNow = following.has(targetUserId);
+	      setFollowing((prev) => {
+	        const next = new Set(prev);
+	        if (isFollowingNow) next.delete(targetUserId);
+	        else next.add(targetUserId);
+	        return next;
+	      });
+	      setFollowVersion((v) => v + 1);
+	      try {
+	        if (isFollowingNow) {
+	          const { error } = await supabase.from("follows").delete().eq("follower_id", authedUserId).eq("followed_id", targetUserId);
+	          if (error) throw error;
+	        } else {
+	          const { error } = await supabase.from("follows").insert({ follower_id: authedUserId, followed_id: targetUserId });
+	          if (error) throw error;
+	        }
+	      } catch (err) {
+	        console.warn("toggleFollow failed", err);
+	        setFollowing((prev) => {
+	          const next = new Set(prev);
+	          if (isFollowingNow) next.add(targetUserId);
+	          else next.delete(targetUserId);
+	          return next;
+	        });
+	        setFollowVersion((v) => v + 1);
+	        show("Follow failed");
+	      }
+	    };
+
+	    const onAddTrack = (t) => {
+	      const seg = {
+	        id: `${t.id}_${Date.now()}`,
+	        type: "track",
         title: t.title,
         artist: t.artist,
         source: t.source,
@@ -2214,19 +2457,23 @@
         ? html`<${FindScreen} tracks=${SAMPLE_TRACKS} onAddTrack=${onAddTrack} />`
         : tab === "builder"
         ? html`<${BuilderScreen} segments=${segments} setSegments=${setSegments} toast=${show} />`
-	        : tab === "sessions"
-	        ? html`<${SessionsScreen}
-	            supabase=${supabase}
-	            supabaseSession=${supabaseSession}
-	            authHeaders=${authHeaders}
-	            zip=${zip}
-	            zipOptIn=${zipOptIn}
-	            likes=${likeSet}
-	            toggleLike=${toggleLike}
-	            onLoad=${onLoadSession}
-	            toast=${show}
-          />`
-	        : html`<${ProfileScreen}
+		        : tab === "sessions"
+		        ? html`<${SessionsScreen}
+		            supabase=${supabase}
+		            supabaseSession=${supabaseSession}
+		            authHeaders=${authHeaders}
+		            zip=${zip}
+		            zipOptIn=${zipOptIn}
+		            likes=${likeSet}
+		            toggleLike=${toggleLike}
+		            following=${following}
+		            followers=${followers}
+		            toggleFollow=${toggleFollow}
+		            followVersion=${followVersion}
+		            onLoad=${onLoadSession}
+		            toast=${show}
+	          />`
+		        : html`<${ProfileScreen}
 	            theme=${theme}
 	            setTheme=${(t) => {
 	              setTheme(t);
@@ -2257,10 +2504,13 @@
             zipOptIn=${zipOptIn}
             setZipOptIn=${setZipOptIn}
             onSaveProfile=${saveProfile}
-            myLive=${myLive}
-            onGoLive=${goLive}
-            onEndLive=${stopLive}
-          />`;
+	            myLive=${myLive}
+	            onGoLive=${goLive}
+	            onEndLive=${stopLive}
+	            following=${following}
+	            followers=${followers}
+	            toggleFollow=${toggleFollow}
+	          />`;
 
     return html`<div className="shell">
       <${TopBar} title=${title} subtitle=${subtitle} right=${right} />

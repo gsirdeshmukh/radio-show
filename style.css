@@ -843,6 +843,67 @@ button:hover:not(:disabled) {
   flex: 1;
 }
 
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(5, 8, 14, 0.62);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.sheet-overlay.hidden {
+  display: none;
+}
+
+.sheet {
+  width: min(720px, 96vw);
+  max-height: min(78vh, 760px);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(135deg, rgba(15, 26, 43, 0.92), rgba(12, 21, 36, 0.92));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+  padding: 14px 16px 16px;
+  overflow: hidden;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--grid);
+  margin-bottom: 12px;
+}
+
+.sheet-title {
+  font-family: var(--font-heading);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 14px;
+}
+
+.sheet-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+#profile-sheet-sessions {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+#send-sheet-results {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .trim {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
