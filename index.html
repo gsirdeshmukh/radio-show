@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Radio Show — Spotify + Voice</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net https://js-cdn.music.apple.com; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' data: https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net https://api-v2.soundcloud.com https://api.soundcloud.com https://*.sndcdn.com https://corsproxy.io wss://*.spotify.com wss://*.supabase.co wss://*.supabase.net; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net https://cf-media.sndcdn.com https://cf-hls-media.sndcdn.com https://media.soundcloud.com https://*.sndcdn.com; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
+	  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sdk.scdn.co https://cdn.jsdelivr.net https://js-cdn.music.apple.com; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' data: https://sdk.scdn.co https://api.spotify.com https://accounts.spotify.com https://*.spotify.com https://*.scdn.co https://apresolve.spotify.com https://*.supabase.co https://*.supabase.net https://api-v2.soundcloud.com https://api.soundcloud.com https://*.sndcdn.com https://corsproxy.io wss://*.spotify.com wss://*.supabase.co wss://*.supabase.net stun: turn:; img-src 'self' data: https://i.scdn.co https://*.supabase.co https://*.supabase.net; media-src 'self' data: blob: https://*.supabase.co https://*.supabase.net https://cf-media.sndcdn.com https://cf-hls-media.sndcdn.com https://media.soundcloud.com https://*.sndcdn.com; frame-src 'self' https://sdk.scdn.co; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -171,15 +171,25 @@
       <button id="profile-save-btn" class="ghost small">Save Profile</button>
     </div>
 
-    <div class="subhead">Follow</div>
-    <div class="row wrap">
-      <label class="field">
-        <span>Follow handle</span>
-        <input id="follow-handle" type="text" placeholder="@someone" autocomplete="off" />
-      </label>
-      <button id="follow-btn" class="ghost small">Follow</button>
-    </div>
-  </section>
+	    <div class="subhead">Follow</div>
+	    <div class="row wrap">
+	      <label class="field">
+	        <span>Follow handle</span>
+	        <input id="follow-handle" type="text" placeholder="@someone" autocomplete="off" />
+	      </label>
+	      <button id="follow-btn" class="ghost small">Follow</button>
+	    </div>
+
+	    <div class="subhead">People</div>
+	    <div class="row wrap">
+	      <label class="field">
+	        <span>Search</span>
+	        <input id="people-search" type="text" placeholder="handle or name" autocomplete="off" />
+	      </label>
+	      <button id="people-clear" class="ghost small" type="button">Clear</button>
+	    </div>
+	    <ul id="people-results" class="list compact-list people-results"></ul>
+	  </section>
 
   <main class="workspace">
     <section class="panel sessions" id="sessions-panel">
@@ -189,13 +199,15 @@
       </div>
       <div class="row wrap">
         <input id="sessions-search" type="text" placeholder="Search sessions" />
-        <select id="sessions-feed">
-          <option value="public">Public</option>
-          <option value="following">Following</option>
-          <option value="nearby">Nearby</option>
-          <option value="inbox">Inbox</option>
-          <option value="live">Live</option>
-        </select>
+	        <select id="sessions-feed">
+	          <option value="public">Public</option>
+	          <option value="following">Following</option>
+	          <option value="friends">Friends</option>
+	          <option value="nearby">Nearby</option>
+	          <option value="inbox">Inbox</option>
+	          <option value="live">Live</option>
+	          <option value="live_nearby">Live (Nearby)</option>
+	        </select>
         <select id="sessions-sort">
           <option value="new">Newest</option>
           <option value="plays">Most plays</option>
@@ -305,7 +317,6 @@
   </main>
 
   <section class="panel listen">
-  <section class="panel listen">
     <div class="panel-head">
       <h2>Listen Mode</h2>
       <span class="hint">play current or load a show file</span>
@@ -329,6 +340,68 @@
       </div>
     </div>
   </section>
+
+  <section class="panel live-room collapsed" id="live-room">
+    <div class="panel-head">
+      <h2 id="live-room-title">Live Room</h2>
+      <span class="hint" id="live-room-subtitle">—</span>
+      <button id="live-room-close" class="ghost small">Close</button>
+    </div>
+    <ul id="live-room-events" class="list live-events"></ul>
+    <div class="row live-audio">
+      <button id="live-room-audio-btn" class="ghost small" type="button">Enable Audio</button>
+      <button id="live-room-mic-btn" class="ghost small" type="button">Enable Mic</button>
+      <span class="hint" id="live-room-audio-status">—</span>
+    </div>
+    <div class="row live-composer">
+      <input id="live-room-message" type="text" placeholder="Say something…" autocomplete="off" />
+      <button id="live-room-send" class="primary">Send</button>
+    </div>
+    <audio id="live-room-audio" playsinline></audio>
+  </section>
+
+  <div class="sheet-overlay hidden" id="profile-sheet-overlay" role="dialog" aria-modal="true" aria-label="Profile">
+    <div class="sheet" id="profile-sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title" id="profile-sheet-title">Profile</div>
+          <div class="sheet-subtitle" id="profile-sheet-subtitle">—</div>
+        </div>
+        <button id="profile-sheet-close" class="ghost small" type="button">Close</button>
+      </div>
+      <div class="row wrap">
+        <button id="profile-sheet-follow" class="ghost small" type="button">Follow</button>
+        <button id="profile-sheet-message" class="ghost small" type="button">Message</button>
+      </div>
+      <div class="subhead">Recent Sessions</div>
+      <ul id="profile-sheet-sessions" class="list compact-list"></ul>
+    </div>
+  </div>
+
+  <div class="sheet-overlay hidden" id="send-sheet-overlay" role="dialog" aria-modal="true" aria-label="Send session">
+    <div class="sheet" id="send-sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title" id="send-sheet-title">Send</div>
+          <div class="sheet-subtitle" id="send-sheet-subtitle">Choose a recipient</div>
+        </div>
+        <button id="send-sheet-close" class="ghost small" type="button">Close</button>
+      </div>
+      <div class="row wrap">
+        <label class="field">
+          <span>To</span>
+          <input id="send-sheet-to" type="text" placeholder="@handle" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Note</span>
+          <input id="send-sheet-note" type="text" placeholder="optional" autocomplete="off" />
+        </label>
+        <button id="send-sheet-send" class="primary" type="button">Send</button>
+      </div>
+      <div class="subhead">Suggestions</div>
+      <ul id="send-sheet-results" class="list compact-list"></ul>
+    </div>
+  </div>
 
   <noscript class="noscript">Enable JavaScript to use the radio builder.</noscript>
   <script src="app.js" defer></script>
