@@ -59,7 +59,7 @@ body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
   font-size: var(--body);
   letter-spacing: var(--tight);
   background: radial-gradient(1200px 700px at 30% -10%, rgba(11, 132, 255, 0.2), transparent 55%),
@@ -144,7 +144,7 @@ select {
 }
 
 .content {
-  padding: calc(var(--safe-top) + var(--topbar-h) + 10px) var(--pad) calc(var(--safe-bottom) + var(--tabbar-h) + 18px);
+  padding: calc(var(--safe-top) + var(--topbar-h) + 10px) var(--pad) calc(var(--safe-bottom) + var(--tabbar-h) + 60px);
 }
 
 .section {
@@ -454,6 +454,29 @@ html[data-theme="dark"] .toggle::after {
   transform: translateX(16px);
 }
 
+.now-playing-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  width: min(var(--maxw), 100%);
+  padding: 0 var(--pad) 8px;
+  z-index: 55;
+}
+
+.now-playing-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  box-shadow: var(--shadow-soft);
+}
+
 .tabbar {
   position: fixed;
   left: 50%;
@@ -477,7 +500,7 @@ html[data-theme="dark"] .toggle::after {
 }
 
 .tab {
-  width: 20%;
+  width: 25%;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -506,6 +529,15 @@ html[data-theme="dark"] .toggle::after {
 
 .tab.active svg {
   stroke: var(--accent);
+  fill: none;
+}
+
+.tab.listen-active {
+  color: var(--danger);
+}
+
+.tab.listen-active svg {
+  stroke: var(--danger);
 }
 
 .fade-in {

@@ -22,6 +22,8 @@
   const SOUNDCLOUD_TOKEN_KEY = "rs_sc_token";
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
   const DEFAULT_SOUNDCLOUD_CLIENT_ID = "a281953d7fedd08d1a49c517fdbeba2c"; // Public SoundCloud client ID for default access
+  const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
+  const DEFAULT_SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
   const SPOTIFY_SCOPES = "streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative user-read-private user-read-email";
 
   const ACCENTS = [
@@ -236,6 +238,15 @@
     if (name === "spark") {
       return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path ...${common} d="M12 2l1.6 6.2L20 10l-6.4 1.8L12 18l-1.6-6.2L4 10l6.4-1.8z" /></svg>`;
     }
+    if (name === "discover") {
+      return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle ...${common} cx="12" cy="12" r="10" /><circle ...${common} cx="12" cy="12" r="3" /><path ...${common} d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>`;
+    }
+    if (name === "headphones") {
+      return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path ...${common} d="M3 14v-4a9 9 0 0 1 18 0v4" /><path ...${common} d="M3 14h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H3M18 14h3a2 2 0 0 0 2 2v2a2 2 0 0 0-2 2h-3" /></svg>`;
+    }
+    if (name === "settings") {
+      return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle ...${common} cx="12" cy="12" r="3" /><path ...${common} d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" /></svg>`;
+    }
     return null;
   }
 
@@ -253,18 +264,17 @@
 
   function TabBar({ value, onChange }) {
     const tabs = [
-      { key: "home", label: "Home", icon: "home" },
-      { key: "find", label: "Find", icon: "search" },
-      { key: "builder", label: "Builder", icon: "mic" },
-      { key: "sessions", label: "Sessions", icon: "stack" },
-      { key: "profile", label: "Profile", icon: "user" },
+      { key: "build", label: "build", icon: "mic" },
+      { key: "discover", label: "discover", icon: "discover" },
+      { key: "listen", label: "listen", icon: "headphones" },
+      { key: "me", label: "me", icon: "user" },
     ];
     return html`<div className="tabbar">
       <div className="tabbar-inner">
         ${tabs.map(
           (t) =>
             html`<button
-              className=${cx("tab", value === t.key && "active")}
+              className=${cx("tab", value === t.key && "active", t.key === "listen" && value === t.key && "listen-active")}
               onClick=${() => onChange(t.key)}
               aria-label=${t.label}
               type="button"
@@ -281,6 +291,47 @@
     if (!toast) return null;
     return html`<div className="toast fade-in" role="status" aria-live="polite">
       <div className="toast-inner">${toast.message}</div>
+    </div>`;
+  }
+
+  function NowPlayingBar({ currentTrack, isPlaying, currentTime, duration, onPlayPause, onNavigateToListen }) {
+    if (!currentTrack) return null;
+    
+    const formatTime = (seconds) => {
+      const total = Math.floor(seconds || 0);
+      const m = String(Math.floor(total / 60));
+      const s = String(total % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    };
+
+    return html`<div className="now-playing-bar" onClick=${onNavigateToListen} style=${{ cursor: "pointer" }}>
+      <div className="now-playing-inner">
+        <div style=${{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
+          <div className="thumb" style=${{ width: "40px", height: "40px", flexShrink: 0, backgroundImage: currentTrack.cover_url ? `url(${currentTrack.cover_url})` : "none", backgroundSize: "cover" }}></div>
+          <div style=${{ flex: 1, minWidth: 0 }}>
+            <div style=${{ fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>${currentTrack.title || "Untitled"}</div>
+            <div style=${{ fontSize: "12px", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>${currentTrack.host || currentTrack.artist || "Unknown"}</div>
+          </div>
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+          <div style=${{ width: "60px", height: "3px", background: "rgba(255,255,255,0.2)", borderRadius: "2px", overflow: "hidden" }}>
+            <div style=${{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`, height: "100%", background: "var(--accent)", transition: "width 0.1s linear" }}></div>
+          </div>
+          <button
+            className="pill icon"
+            onClick=${(e) => {
+              e.stopPropagation();
+              onPlayPause();
+            }}
+            type="button"
+            style=${{ width: "32px", height: "32px", padding: 0 }}
+          >
+            ${isPlaying
+              ? html`<svg viewBox="0 0 24 24" fill="currentColor" style=${{ width: "16px", height: "16px" }}><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>`
+              : html`<svg viewBox="0 0 24 24" fill="currentColor" style=${{ width: "16px", height: "16px" }}><path d="M8 5v14l11-7z" /></svg>`}
+          </button>
+        </div>
+      </div>
     </div>`;
   }
 
@@ -722,10 +773,166 @@
     </div>`;
   }
 
+	  function EditSongModal({ segment, onClose, onSave, onDelete }) {
+	    const [startTime, setStartTime] = useState(0);
+	    const [endTime, setEndTime] = useState(segment?.duration || 0);
+	    const [fadeIn, setFadeIn] = useState(0);
+	    const [fadeOut, setFadeOut] = useState(0);
+	    const [note, setNote] = useState("");
+	    const [duckUnderVoice, setDuckUnderVoice] = useState(true);
+
+	    const formatTime = (seconds) => {
+	      const total = Math.floor(seconds || 0);
+	      const m = String(Math.floor(total / 60));
+	      const s = String(total % 60).padStart(2, "0");
+	      return `${m}:${s}`;
+	    };
+
+	    const parseDuration = (durationStr) => {
+	      if (!durationStr) return 0;
+	      const parts = String(durationStr).split(":");
+	      if (parts.length === 2) {
+	        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+	      }
+	      return 0;
+	    };
+
+	    useEffect(() => {
+	      if (segment) {
+	        const totalSeconds = parseDuration(segment.duration);
+	        setEndTime(totalSeconds);
+	      }
+	    }, [segment]);
+
+	    const handleSave = () => {
+	      onSave({
+	        ...segment,
+	        startTime,
+	        endTime,
+	        fadeIn,
+	        fadeOut,
+	        note: note.trim() || null,
+	        duckUnderVoice,
+	      });
+	      onClose();
+	    };
+
+	    const totalSeconds = parseDuration(segment?.duration || "0:00");
+	    const selectedDuration = endTime - startTime;
+
+	    return html`<div className="modal-overlay" onClick=${onClose}>
+	      <div className="modal" onClick=${(e) => e.stopPropagation()}>
+	        <div className="sheet-head">
+	          <div>
+	            <div className="sheet-title">Edit Song</div>
+	          </div>
+	          <button className="pill icon" onClick=${onClose} type="button">×</button>
+	        </div>
+
+	        <div style=${{ marginBottom: "20px" }}>
+	          <div style=${{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px" }}>
+	            <div className="thumb" style=${{ width: "60px", height: "60px" }}></div>
+	            <div style=${{ flex: 1 }}>
+	              <div style=${{ fontWeight: 700, marginBottom: "4px" }}>${segment?.title || "Untitled"}</div>
+	              <div style=${{ color: "var(--muted)", fontSize: "14px" }}>${segment?.artist || "Unknown"}</div>
+	            </div>
+	            <button className="pill primary" onClick=${() => toast("Preview (prototype)")} type="button">Preview</button>
+	          </div>
+	        </div>
+
+	        <div style=${{ marginBottom: "20px" }}>
+	          <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+	            <div>
+	              <div style=${{ fontSize: "13px", fontWeight: 600, marginBottom: "4px" }}>Start</div>
+	              <div style=${{ fontSize: "18px", fontWeight: 700 }}>${formatTime(startTime)}</div>
+	            </div>
+	            <div>
+	              <div style=${{ fontSize: "13px", fontWeight: 600, marginBottom: "4px" }}>End:</div>
+	              <div style=${{ fontSize: "18px", fontWeight: 700 }}>${formatTime(endTime)}</div>
+	            </div>
+	          </div>
+	          <div style=${{ background: "var(--surface)", borderRadius: "12px", padding: "12px", marginBottom: "8px" }}>
+	            <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+	              <div style=${{ flex: 1, height: "40px", background: "rgba(0,0,0,0.1)", borderRadius: "8px", position: "relative", overflow: "hidden" }}>
+	                <div style=${{ position: "absolute", left: `${(startTime / totalSeconds) * 100}%`, width: `${(selectedDuration / totalSeconds) * 100}%`, height: "100%", background: "var(--accent)", opacity: 0.6 }}></div>
+	              </div>
+	            </div>
+	            <div style=${{ fontSize: "12px", color: "var(--muted)", textAlign: "center" }}>${formatTime(totalSeconds)}</div>
+	          </div>
+	          <div style=${{ display: "flex", gap: "12px" }}>
+	            <button className="pill" onClick=${() => setStartTime(Math.max(0, startTime - 1))} type="button" style=${{ flex: 1 }}>-1s</button>
+	            <button className="pill" onClick=${() => setStartTime(Math.min(endTime - 1, startTime + 1))} type="button" style=${{ flex: 1 }}>+1s</button>
+	            <button className="pill" onClick=${() => setEndTime(Math.max(startTime + 1, endTime - 1))} type="button" style=${{ flex: 1 }}>-1s</button>
+	            <button className="pill" onClick=${() => setEndTime(Math.min(totalSeconds, endTime + 1))} type="button" style=${{ flex: 1 }}>+1s</button>
+	          </div>
+	        </div>
+
+	        <div style=${{ marginBottom: "20px" }}>
+	          <div style=${{ fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Fade In</div>
+	          <div style=${{ display: "flex", alignItems: "center", gap: "12px" }}>
+	            <input
+	              type="range"
+	              min="0"
+	              max="2"
+	              step="0.1"
+	              value=${fadeIn}
+	              onChange=${(e) => setFadeIn(parseFloat(e.target.value))}
+	              style=${{ flex: 1 }}
+	            />
+	            <div style=${{ minWidth: "40px", textAlign: "right", fontSize: "14px" }}>${fadeIn.toFixed(1)}s</div>
+	          </div>
+	          <div style=${{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>1 s</div>
+	        </div>
+
+	        <div style=${{ marginBottom: "20px" }}>
+	          <div style=${{ fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Fade Out</div>
+	          <div style=${{ display: "flex", alignItems: "center", gap: "12px" }}>
+	            <input
+	              type="range"
+	              min="0"
+	              max="2"
+	              step="0.1"
+	              value=${fadeOut}
+	              onChange=${(e) => setFadeOut(parseFloat(e.target.value))}
+	              style=${{ flex: 1 }}
+	            />
+	            <div style=${{ minWidth: "40px", textAlign: "right", fontSize: "14px" }}>${fadeOut.toFixed(1)}s</div>
+	          </div>
+	          <div style=${{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>2 s</div>
+	        </div>
+
+	        <div style=${{ marginBottom: "20px" }}>
+	          <div style=${{ fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Add Note</div>
+	          <input
+	            value=${note}
+	            onChange=${(e) => setNote(e.target.value)}
+	            placeholder="Optional note..."
+	            style=${{ width: "100%", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "12px", background: "var(--surface)", color: "var(--text)" }}
+	          />
+	        </div>
+
+	        <div style=${{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+	          <div style=${{ fontSize: "13px", fontWeight: 600 }}>Duck Under Voice</div>
+	          <${Toggle} value=${duckUnderVoice} onChange=${setDuckUnderVoice} label="Duck Under Voice" />
+	        </div>
+
+	        <div style=${{ display: "flex", gap: "12px", marginBottom: "20px" }}>
+	          <button className="pill danger" onClick=${() => { onDelete(segment.id); onClose(); }} type="button" style=${{ flex: 1 }}>
+	            Delete Clip
+	          </button>
+	          <button className="pill primary" onClick=${handleSave} type="button" style=${{ flex: 1 }}>
+	            Done
+	          </button>
+	        </div>
+	      </div>
+	    </div>`;
+	  }
+
 	  function BuilderScreen({ segments, setSegments, toast, supabase, authHeaders, profileHandle, zip, zipOptIn }) {
     const [recording, setRecording] = useState(false);
     const [seconds, setSeconds] = useState(0);
     const [showSaveDialog, setShowSaveDialog] = useState(false);
+    const [editingSegment, setEditingSegment] = useState(null);
     const timerRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
@@ -869,7 +1076,7 @@
         </div>
         <div className="list">
           ${segments.map(
-            (s) => html`<div className="item">
+            (s) => html`<div className="item" style=${{ cursor: "pointer" }} onClick=${() => setEditingSegment(s)}>
               <div className="thumb"></div>
               <div className="grow meta">
                 <div className="t">${s.title}</div>
@@ -877,15 +1084,15 @@
                 <div className="row" style=${{ marginTop: "10px", gap: "10px" }}>
                   <div className="chip">
                     Cue
-                    <${Toggle} value=${!!s.cue} onChange=${() => toggle(s.id, "cue")} label="Cue" />
+                    <${Toggle} value=${!!s.cue} onChange=${(e) => { e.stopPropagation(); toggle(s.id, "cue"); }} label="Cue" />
                   </div>
                   <div className="chip">
                     Fade
-                    <${Toggle} value=${!!s.fade} onChange=${() => toggle(s.id, "fade")} label="Fade" />
+                    <${Toggle} value=${!!s.fade} onChange=${(e) => { e.stopPropagation(); toggle(s.id, "fade"); }} label="Fade" />
                   </div>
                 </div>
               </div>
-              <button className="pill icon" onClick=${() => remove(s.id)} aria-label="Remove" type="button">
+              <button className="pill icon" onClick=${(e) => { e.stopPropagation(); remove(s.id); }} aria-label="Remove" type="button">
                 <span style=${{ fontWeight: 700, opacity: 0.75 }}>×</span>
               </button>
             </div>`
@@ -910,6 +1117,31 @@
           </button>
         </div>
       </div>
+
+      <div style=${{ position: "fixed", bottom: "calc(var(--tabbar-h) + var(--safe-bottom) + 20px)", left: "50%", transform: "translateX(-50%)", zIndex: 50 }}>
+        <button
+          className="pill primary"
+          onClick=${startRecording}
+          type="button"
+          style=${{ width: "64px", height: "64px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--shadow)" }}
+          disabled=${recording}
+        >
+          <${Icon} name="mic" />
+        </button>
+      </div>
+
+      ${editingSegment && html`<${EditSongModal}
+        segment=${editingSegment}
+        onClose=${() => setEditingSegment(null)}
+        onSave=${(updated) => {
+          setSegments((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+          toast("Segment updated");
+        }}
+        onDelete=${(id) => {
+          remove(id);
+          toast("Segment deleted");
+        }}
+      />`}
       ${showSaveDialog && html`<${SaveDialog}
         segments=${segments}
         onSaveLocal=${async (payload) => {
@@ -1660,6 +1892,332 @@
 			    </div>`;
 			  }
 
+			  function DiscoverScreen({
+			    supabase,
+			    supabaseSession,
+			    authHeaders,
+			    zip,
+			    zipOptIn,
+			    likes,
+			    toggleLike,
+			    following,
+			    followers,
+			    toggleFollow,
+			    followVersion,
+			    onLoad,
+			    toast,
+			    onNavigateToListen,
+			  }) {
+			    const [searchQuery, setSearchQuery] = useState("");
+			    const [filterMode, setFilterMode] = useState("today");
+			    const [trendingRows, setTrendingRows] = useState([]);
+			    const [recommendationsBuilt, setRecommendationsBuilt] = useState([]);
+			    const [recommendationsListened, setRecommendationsListened] = useState([]);
+			    const [inboxTab, setInboxTab] = useState("New");
+			    const [inbox, setInbox] = useState([]);
+			    const [liveRoom, setLiveRoom] = useState(null);
+			    const [presence, setPresence] = useState(() => new Map());
+			    const userId = supabaseSession?.user?.id || "";
+
+			    if (liveRoom) {
+			      return html`<${LiveRoomScreen} supabase=${supabase} live=${liveRoom} userId=${userId} onClose=${() => setLiveRoom(null)} toast=${toast} />`;
+			    }
+
+			    const fetchPresence = async (hostIds) => {
+			      if (!supabase || !userId || !hostIds.length) {
+			        setPresence(new Map());
+			        return;
+			      }
+			      try {
+			        const { data, error } = await supabase.from("profile_presence").select("user_id, last_seen_at, status").in("user_id", hostIds);
+			        if (error) throw error;
+			        setPresence(new Map((data || []).map((r) => [r.user_id, r])));
+			      } catch {
+			        setPresence(new Map());
+			      }
+			    };
+
+			    const isActive = (p) => {
+			      const last = Date.parse(p?.last_seen_at || "");
+			      return Number.isFinite(last) && Date.now() - last < 70_000;
+			    };
+
+			    useEffect(() => {
+			      if (!supabase || !userId) return;
+			      const channel = supabase
+			        .channel(`rs-inbox-${userId}`)
+			        .on("postgres_changes", { event: "INSERT", schema: "public", table: "inbox_items", filter: `to_user_id=eq.${userId}` }, (payload) => {
+			          const it = payload?.new || null;
+			          if (!it?.id) return;
+			          setInbox((prev) => {
+			            const arr = Array.isArray(prev) ? prev : [];
+			            if (arr.some((x) => x?.id === it.id)) return arr;
+			            return [{ ...it, from: null }, ...arr];
+			          });
+			        })
+			        .subscribe();
+			      return () => {
+			        try {
+			          channel.unsubscribe().catch(() => {});
+			        } catch {}
+			      };
+			    }, [supabase, userId]);
+
+			    useEffect(() => {
+			      let ignore = false;
+			      const run = async () => {
+			        if (!supabase) {
+			          if (!ignore) setTrendingRows([]);
+			          if (!ignore) setInbox([]);
+			          if (!ignore) setPresence(new Map());
+			          return;
+			        }
+
+			        try {
+			          const zipFilter = filterMode === "nearby" ? (zip || null) : null;
+			          const sort = filterMode === "live" ? null : "top";
+			          
+			          if (filterMode === "live") {
+			            const { data, error } = await supabase.functions.invoke("list_live", {
+			              headers: authHeaders || {},
+			              body: { zip: zipFilter, limit: 50 },
+			            });
+			            if (error) throw error;
+			            const live = Array.isArray(data?.live) ? data.live : [];
+			            if (!ignore) setTrendingRows(live);
+			            await fetchPresence(Array.from(new Set(live.map((x) => x.host_user_id).filter(Boolean))));
+			          } else {
+			            const { data, error } = await supabase.functions.invoke("list_sessions", {
+			              body: { q: searchQuery.trim() || null, sort, limit: 50, zip: zipFilter },
+			            });
+			            if (error) throw error;
+			            const next = Array.isArray(data?.sessions) ? data.sessions : [];
+			            if (!ignore) setTrendingRows(next);
+			            await fetchPresence(Array.from(new Set(next.map((x) => x.host_user_id).filter(Boolean))));
+			          }
+
+			          if (userId) {
+			            const likedIds = Array.from(likes || []);
+			            if (likedIds.length) {
+			              const { data: recData } = await supabase
+			                .from("sessions")
+			                .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
+			                .in("id", likedIds.slice(0, 5))
+			                .limit(5);
+			              if (recData && recData.length) {
+			                const recSessions = recData.map((row) => ({
+			                  id: row.id,
+			                  slug: row.slug,
+			                  title: row.title,
+			                  host_user_id: row.host_user_id,
+			                  host: row.host_name,
+			                  genre: row.genre,
+			                  tags: row.tags,
+			                  cover_url: row.cover_url,
+			                  url: row.storage_path,
+			                  plays: row.session_stats?.[0]?.plays ?? 0,
+			                  downloads: row.session_stats?.[0]?.downloads ?? 0,
+			                  likes: row.session_stats?.[0]?.likes ?? 0,
+			                  created_at: row.created_at,
+			                }));
+			                if (!ignore) setRecommendationsListened(recSessions);
+			              }
+			            }
+			          }
+			        } catch {
+			          if (!ignore) setTrendingRows([]);
+			          if (!ignore) setPresence(new Map());
+			        }
+			      };
+			      run();
+			      return () => {
+			        ignore = true;
+			      };
+			    }, [supabase, userId, filterMode, searchQuery, zip, zipOptIn, likes]);
+
+			    useEffect(() => {
+			      let ignore = false;
+			      if (!supabase || !userId || inboxTab !== "New") {
+			        if (!ignore) setInbox([]);
+			        return;
+			      }
+			      (async () => {
+			        try {
+			          const { data, error } = await supabase
+			            .from("inbox_items")
+			            .select("id, from_user_id, session_id, note, status, created_at")
+			            .eq("to_user_id", userId)
+			            .order("created_at", { ascending: false })
+			            .limit(50);
+			          if (error) throw error;
+			          const items = Array.isArray(data) ? data : [];
+			          const fromIds = Array.from(new Set(items.map((x) => x.from_user_id).filter(Boolean)));
+			          const senders = new Map();
+			          if (fromIds.length) {
+			            const { data: profiles } = await supabase.from("profiles").select("user_id, handle, display_name").in("user_id", fromIds);
+			            (profiles || []).forEach((p) => senders.set(p.user_id, p));
+			          }
+			          if (!ignore) setInbox(items.map((x) => ({ ...x, from: senders.get(x.from_user_id) || null })));
+			        } catch {
+			          if (!ignore) setInbox([]);
+			        }
+			      })();
+			      return () => {
+			        ignore = true;
+			      };
+			    }, [supabase, userId, inboxTab]);
+
+			    const formatTimeAgo = (dateStr) => {
+			      if (!dateStr) return "";
+			      const date = new Date(dateStr);
+			      const now = new Date();
+			      const diffMs = now - date;
+			      const diffMins = Math.floor(diffMs / 60000);
+			      const diffHours = Math.floor(diffMs / 3600000);
+			      const diffDays = Math.floor(diffMs / 86400000);
+			      if (diffMins < 60) return `${diffMins}m`;
+			      if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m`;
+			      return date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" });
+			    };
+
+			    const subtitle = (s) => {
+			      const bits = [];
+			      if (s?.host) bits.push(`by ${s.host}`);
+			      if (s?.genre) bits.push(s.genre);
+			      const stats = [];
+			      if (typeof s?.plays === "number") stats.push(`${s.plays} plays`);
+			      if (typeof s?.likes === "number") stats.push(`${s.likes} likes`);
+			      if (stats.length) bits.push(stats.join(" · "));
+			      return bits.join(" · ");
+			    };
+
+			    return html`<div className="fade-in">
+			      <div className="section" style=${{ marginTop: 0 }}>
+			        <div className="field" style=${{ marginBottom: "12px" }}>
+			          <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+			            <span style=${{ color: "var(--muted)", fontSize: "14px" }}>discover</span>
+			            <div style=${{ display: "flex", alignItems: "center", gap: "8px", flex: 1, marginLeft: "12px" }}>
+			              <input
+			                value=${searchQuery}
+			                onChange=${(e) => setSearchQuery(e.target.value)}
+			                placeholder="search"
+			                style=${{ border: "none", outline: "none", background: "transparent", flex: 1, color: "var(--text)" }}
+			              />
+			              <${Icon} name="search" />
+			            </div>
+			          </div>
+			        </div>
+			        <${Segmented}
+			          options=${[
+			            { label: "Trending nearby", value: "nearby" },
+			            { label: "today", value: "today" },
+			            { label: "live", value: "live" },
+			          ]}
+			          value=${filterMode}
+			          onChange=${setFilterMode}
+			        />
+			      </div>
+
+			      <div className="section">
+			        <div className="section-head">
+			          <div className="section-title">Trending nearby today live</div>
+			        </div>
+			        <div className="list">
+			          ${(trendingRows || []).slice(0, 3).map((s) => {
+			            const isLiked = likes.has(s.id);
+			            const likeCount = (s.likes || 0) + (isLiked ? 1 : 0);
+			            const p = s?.host_user_id ? presence.get(s.host_user_id) : null;
+			            const active = p && isActive(p);
+			            return html`<div className="item" style=${{ cursor: "pointer" }} onClick=${() => onLoad(s)}>
+			              <div className="thumb" style=${{ backgroundImage: s.cover_url ? `url(${s.cover_url})` : "none", backgroundSize: "cover" }}></div>
+			              <div className="grow meta">
+			                <div className="t">${s.title || s.slug || "Untitled"}</div>
+			                <div className="s">
+			                  ${s.duration || "0:00"} · ${likeCount} likes
+			                  ${s.host ? ` · @${s.host}` : ""} ${s.zip || s.location || ""}
+			                  ${s.downloads ? ` · ${s.downloads > 1000 ? `${(s.downloads / 1000).toFixed(0)}k` : s.downloads} downloads` : ""}
+			                </div>
+			              </div>
+			            </div>`;
+			          })}
+			          ${(!trendingRows || !trendingRows.length) &&
+			          html`<div className="card">
+			            <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>No trending shows found.</div>
+			          </div>`}
+			        </div>
+			      </div>
+
+			      ${recommendationsBuilt.length > 0 &&
+			      html`<div className="section">
+			        <div className="section-head">
+			          <div className="section-title">
+			            Because you <span style=${{ color: "var(--accent)" }}>built</span> ${recommendationsBuilt[0]?.title || "a show"}
+			          </div>
+			        </div>
+			        <div className="list">
+			          ${recommendationsBuilt.slice(0, 3).map((s) => html`<div className="item" style=${{ cursor: "pointer" }} onClick=${() => onLoad(s)}>
+			            <div className="thumb"></div>
+			            <div className="grow meta">
+			              <div className="t">${s.title || "Untitled"}</div>
+			              <div className="s">${s.host ? `by ${s.host}` : ""} · ${s.likes || 0} likes</div>
+			            </div>
+			          </div>`)}
+			        </div>
+			      </div>`}
+
+			      ${recommendationsListened.length > 0 &&
+			      html`<div className="section">
+			        <div className="section-head">
+			          <div className="section-title">
+			            Because you <span style=${{ color: "var(--accent)" }}>listened</span> to ${recommendationsListened[0]?.title || "a show"}
+			          </div>
+			        </div>
+			        <div className="list">
+			          ${recommendationsListened.slice(0, 3).map((s) => html`<div className="item" style=${{ cursor: "pointer" }} onClick=${() => onLoad(s)}>
+			            <div className="thumb"></div>
+			            <div className="grow meta">
+			              <div className="t">${s.title || "Untitled"}</div>
+			              <div className="s">${s.host ? `by ${s.host}` : ""} · ${s.likes || 0} likes</div>
+			            </div>
+			          </div>`)}
+			        </div>
+			      </div>`}
+
+			      <div className="section">
+			        <div className="section-head">
+			          <div className="section-title">Inbox</div>
+			        </div>
+			        <${Segmented}
+			          options=${[
+			            { label: "New", value: "New" },
+			            { label: "Sent to you", value: "Sent to you" },
+			            { label: "Following", value: "Following" },
+			          ]}
+			          value=${inboxTab}
+			          onChange=${setInboxTab}
+			        />
+			        <div style=${{ marginTop: "12px" }}>
+			          <div className="list">
+			            ${(inbox || []).map((it) => {
+			              const from = it?.from?.handle ? `@${it.from.handle}` : it?.from?.display_name || "Someone";
+			              return html`<div className="item" style=${{ cursor: "pointer" }} onClick=${() => onLoad({ id: it.session_id })}>
+			                <div className="thumb"></div>
+			                <div className="grow meta">
+			                  <div className="t">${it.status === "unread" ? "New session" : "Session"} · ${from}</div>
+			                  <div className="s">${[it.note || null, formatTimeAgo(it.created_at)].filter(Boolean).join(" · ")}</div>
+			                </div>
+			              </div>`;
+			            })}
+			            ${(!inbox || !inbox.length) &&
+			            html`<div className="card">
+			              <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${userId ? "No messages yet." : "Sign in to view your inbox."}</div>
+			            </div>`}
+			          </div>
+			        </div>
+			      </div>
+			    </div>`;
+			  }
+
 			  function SessionsScreen({
 			    supabase,
 			    supabaseSession,
@@ -2126,31 +2684,165 @@
 		    </div>`;
 		  }
 
-	  function ProfileScreen({
+	  function ListenScreen({ supabase, supabaseSession, authHeaders, likes, toggleLike, toast, currentTrack, setCurrentTrack, isPlaying, setIsPlaying, currentTime, setCurrentTime, trackDuration, setTrackDuration }) {
+	    const [volume, setVolume] = useState(1);
+	    const [showComments, setShowComments] = useState(false);
+
+	    useEffect(() => {
+	      if (!currentTrack) {
+	        const stored = localStorage.getItem("rs_current_track");
+	        if (stored) {
+	          try {
+	            const track = JSON.parse(stored);
+	            setCurrentTrack(track);
+	            setTrackDuration(track.duration || 0);
+	          } catch {}
+	        }
+	      }
+	    }, []);
+
+	    const formatTime = (seconds) => {
+	      const total = Math.floor(seconds || 0);
+	      const m = String(Math.floor(total / 60));
+	      const s = String(total % 60).padStart(2, "0");
+	      return `${m}:${s}`;
+	    };
+
+	    const handlePlayPause = () => {
+	      setIsPlaying(!isPlaying);
+	    };
+
+	    const handleSeek = (e) => {
+	      const rect = e.currentTarget.getBoundingClientRect();
+	      const x = e.clientX - rect.left;
+	      const percent = Math.max(0, Math.min(1, x / rect.width));
+	      const newTime = percent * trackDuration;
+	      setCurrentTime(newTime);
+	    };
+
+	    const handleVolumeChange = (e) => {
+	      const rect = e.currentTarget.getBoundingClientRect();
+	      const x = e.clientX - rect.left;
+	      const newVolume = Math.max(0, Math.min(1, x / rect.width));
+	      setVolume(newVolume);
+	    };
+
+	    const remainingTime = trackDuration - currentTime;
+	    const isLiked = currentTrack?.id ? likes.has(currentTrack.id) : false;
+
+	    return html`<div className="fade-in">
+	      <div style=${{ textAlign: "center", padding: "20px 0 10px", fontSize: "14px", color: "var(--muted)", textTransform: "lowercase" }}>
+	        listen
+	      </div>
+	      <div style=${{ padding: "0 var(--pad)" }}>
+	        ${currentTrack ? html`
+	          <div style=${{ textAlign: "center", marginBottom: "30px" }}>
+	            <div
+	              style=${{ width: "100%", maxWidth: "400px", aspectRatio: "1/1", margin: "0 auto", borderRadius: "12px", background: "var(--surface)", border: "1px solid var(--border)", backgroundImage: currentTrack.cover_url ? `url(${currentTrack.cover_url})` : "none", backgroundSize: "cover", backgroundPosition: "center" }}
+	            ></div>
+	          </div>
+	          <div style=${{ textAlign: "center", marginBottom: "40px" }}>
+	            <h1 style=${{ fontSize: "24px", fontWeight: 700, margin: "0 0 8px" }}>${currentTrack.title || "Untitled"}</h1>
+	            <div style=${{ color: "var(--muted)", fontSize: "16px" }}>${currentTrack.host || currentTrack.artist || "Unknown"}</div>
+	          </div>
+	          <div style=${{ background: "rgba(0,0,0,0.3)", borderRadius: "16px", padding: "20px", marginBottom: "20px" }}>
+	            <div style=${{ marginBottom: "16px" }}>
+	              <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "12px", color: "var(--muted)" }}>
+	                <span>${formatTime(currentTime)}</span>
+	                <span>-${formatTime(remainingTime)}</span>
+	              </div>
+	              <div
+	                style=${{ width: "100%", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px", cursor: "pointer", position: "relative" }}
+	                onClick=${handleSeek}
+	              >
+	                <div style=${{ width: `${trackDuration > 0 ? (currentTime / trackDuration) * 100 : 0}%`, height: "100%", background: "var(--accent)", borderRadius: "2px" }}></div>
+	              </div>
+	            </div>
+	            <div style=${{ display: "flex", justifyContent: "center", alignItems: "center", gap: "24px", marginBottom: "16px" }}>
+	              <button className="pill icon" onClick=${() => setCurrentTime(Math.max(0, currentTime - 10))} type="button" style=${{ fontSize: "20px" }}>
+	                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" /></svg>
+	              </button>
+	              <button className="pill icon primary" onClick=${handlePlayPause} type="button" style=${{ width: "64px", height: "64px", fontSize: "24px" }}>
+	                ${isPlaying
+	                  ? html`<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>`
+	                  : html`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>`}
+	              </button>
+	              <button className="pill icon" onClick=${() => setCurrentTime(Math.min(trackDuration, currentTime + 10))} type="button" style=${{ fontSize: "20px" }}>
+	                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5" /></svg>
+	              </button>
+	            </div>
+	            <div style=${{ marginBottom: "16px" }}>
+	              <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+	                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a4 4 0 0 0-4 4v14a4 4 0 0 0 4 4h3M9 18V8a4 4 0 0 1 4-4h3" /></svg>
+	                <div
+	                  style=${{ flex: 1, height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px", cursor: "pointer", position: "relative" }}
+	                  onClick=${handleVolumeChange}
+	                >
+	                  <div style=${{ width: `${volume * 100}%`, height: "100%", background: "var(--accent)", borderRadius: "2px" }}></div>
+	                </div>
+	                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5zM19 10a2 2 0 0 1 0 4" /></svg>
+	              </div>
+	            </div>
+	            <div style=${{ display: "flex", justifyContent: "center", gap: "16px" }}>
+	              <button className="pill icon" onClick=${() => setShowComments(!showComments)} type="button">
+	                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+	              </button>
+	              <button className="pill icon" type="button">
+	                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
+	              </button>
+	              <button className="pill icon" type="button">
+	                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+	              </button>
+	            </div>
+	          </div>
+	          <div style=${{ display: "flex", justifyContent: "space-around", padding: "20px 0" }}>
+	            <button className="pill" onClick=${() => setShowComments(!showComments)} type="button" style=${{ flex: 1, marginRight: "8px" }}>
+	              Comment
+	            </button>
+	            <button
+	              className=${cx("pill", isLiked && "primary")}
+	              onClick=${() => currentTrack?.id && toggleLike(currentTrack.id)}
+	              type="button"
+	              style=${{ flex: 1, marginLeft: "8px" }}
+	            >
+	              Like
+	            </button>
+	          </div>
+	        ` : html`
+	          <div style=${{ textAlign: "center", padding: "60px 20px", color: "var(--muted)" }}>
+	            <div style=${{ fontSize: "18px", marginBottom: "12px" }}>No track playing</div>
+	            <div style=${{ fontSize: "14px" }}>Select a show from Discover to start listening</div>
+	          </div>
+	        `}
+	      </div>
+	    </div>`;
+	  }
+
+	  function SettingsModal({
 	    theme,
 	    setTheme,
 	    accent,
 	    setAccent,
-    services,
-    toast,
-    supabase,
-    supabaseSession,
-    supabaseUrl,
-    setSupabaseUrl,
-    supabaseAnon,
-    setSupabaseAnon,
-    authedEmail,
-    supabaseEmail,
-    setSupabaseEmail,
-    onSignIn,
-    onSignOut,
-    profileHandle,
-    setProfileHandle,
-    zip,
-    setZip,
-    zipOptIn,
-    setZipOptIn,
-    onSaveProfile,
+	    services,
+	    toast,
+	    supabase,
+	    supabaseSession,
+	    supabaseUrl,
+	    setSupabaseUrl,
+	    supabaseAnon,
+	    setSupabaseAnon,
+	    authedEmail,
+	    supabaseEmail,
+	    setSupabaseEmail,
+	    onSignIn,
+	    onSignOut,
+	    profileHandle,
+	    setProfileHandle,
+	    zip,
+	    setZip,
+	    zipOptIn,
+	    setZipOptIn,
+	    onSaveProfile,
 	    myLive,
 	    onGoLive,
 	    onEndLive,
@@ -2169,6 +2861,7 @@
 	    soundcloudConnected,
 	    onSoundcloudAuth,
 	    onSoundcloudDisconnect,
+	    onClose,
 	  }) {
 	    const userId = supabaseSession?.user?.id || "";
 	    const [peopleQ, setPeopleQ] = useState("");
@@ -2230,21 +2923,14 @@
       };
 	    }, [supabase, userId, peopleQ]);
 
-	    return html`<div className="fade-in">
-	      <div className="section" style=${{ marginTop: 0 }}>
-	        <div className="card">
-          <div className="row">
-            <div className="thumb" style=${{ borderRadius: "18px" }}></div>
-            <div className="grow">
-              <div style=${{ fontSize: "18px", fontWeight: 750, lineHeight: 1.2 }}>${profileHandle ? `@${profileHandle}` : "Profile"}</div>
-              <div style=${{ color: "var(--muted)", marginTop: "4px" }}>${authedEmail ? authedEmail : "Not signed in"}</div>
-            </div>
-            <button className="pill icon" onClick=${() => toast("Profile (scaffold)")} aria-label="Info" type="button">
-              <${Icon} name="spark" />
-            </button>
-          </div>
-        </div>
-      </div>
+	    return html`<div className="sheet-overlay" onClick=${onClose}>
+	      <div className="sheet" onClick=${(e) => e.stopPropagation()}>
+	        <div className="sheet-head">
+	          <div>
+	            <div className="sheet-title">Settings</div>
+	          </div>
+	          <button className="pill icon" onClick=${onClose} type="button">×</button>
+	        </div>
 
       <div className="section">
         <div className="section-head">
@@ -2253,12 +2939,6 @@
         </div>
         <div className="card">
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
-            <div className="field">
-              <input value=${supabaseUrl} onChange=${(e) => setSupabaseUrl(e.target.value)} placeholder="Supabase URL" />
-            </div>
-            <div className="field">
-              <input type="password" value=${supabaseAnon} onChange=${(e) => setSupabaseAnon(e.target.value)} placeholder="Supabase anon key" />
-            </div>
             <div className="row">
               <div className="field grow">
                 <input value=${supabaseEmail} onChange=${(e) => setSupabaseEmail(e.target.value)} placeholder="you@example.com" />
@@ -2412,9 +3092,6 @@
             <div className="field">
               <input value=${spotifyClientId} onChange=${(e) => setSpotifyClientId(e.target.value)} placeholder="Client ID (PKCE)" />
             </div>
-            <div className="field">
-              <input value=${spotifyRedirect} onChange=${(e) => setSpotifyRedirect(e.target.value)} placeholder="Redirect URI" />
-            </div>
             <div className="row">
               ${spotifyConnected
                 ? html`<button className="pill danger" onClick=${onSpotifyDisconnect} type="button">Disconnect</button>`
@@ -2442,18 +3119,237 @@
           </div>
         </div>
       </div>
+      </div>
+    </div>`;
+  }
+
+	  function ProfileScreen({
+	    theme,
+	    setTheme,
+	    accent,
+	    setAccent,
+    services,
+    toast,
+    supabase,
+    supabaseSession,
+    supabaseUrl,
+    setSupabaseUrl,
+    supabaseAnon,
+    setSupabaseAnon,
+    authedEmail,
+    supabaseEmail,
+    setSupabaseEmail,
+    onSignIn,
+    onSignOut,
+    profileHandle,
+    setProfileHandle,
+    zip,
+    setZip,
+    zipOptIn,
+    setZipOptIn,
+    onSaveProfile,
+	    myLive,
+	    onGoLive,
+	    onEndLive,
+	    following,
+	    followers,
+	    toggleFollow,
+	    spotifyClientId,
+	    setSpotifyClientId,
+	    spotifyRedirect,
+	    setSpotifyRedirect,
+	    spotifyConnected,
+	    onSpotifyAuth,
+	    onSpotifyDisconnect,
+	    soundcloudClientId,
+	    setSoundcloudClientId,
+	    soundcloudConnected,
+	    onSoundcloudAuth,
+	    onSoundcloudDisconnect,
+	  }) {
+	    const userId = supabaseSession?.user?.id || "";
+	    const [userShows, setUserShows] = useState([]);
+	    const [showSettings, setShowSettings] = useState(false);
+	    const [userStats, setUserStats] = useState({ followers: 0, following: 0, likes: 0 });
+	    const [displayName, setDisplayName] = useState("");
+
+	    useEffect(() => {
+	      if (!supabase || !userId) {
+	        setUserShows([]);
+	        setUserStats({ followers: 0, following: 0, likes: 0 });
+	        return;
+	      }
+	      let ignore = false;
+	      (async () => {
+	        try {
+	          const { data: shows } = await supabase
+	            .from("sessions")
+	            .select("id, slug, title, host_user_id, host_name, genre, tags, cover_url, storage_path, created_at, session_stats(plays, downloads, likes)")
+	            .eq("host_user_id", userId)
+	            .order("created_at", { ascending: false })
+	            .limit(50);
+	          if (ignore) return;
+	          if (shows) {
+	            setUserShows(shows.map((row) => ({
+	              id: row.id,
+	              slug: row.slug,
+	              title: row.title,
+	              host: row.host_name,
+	              genre: row.genre,
+	              cover_url: row.cover_url,
+	              duration: "0:00",
+	              likes: row.session_stats?.[0]?.likes ?? 0,
+	              downloads: row.session_stats?.[0]?.downloads ?? 0,
+	              location: null,
+	              created_at: row.created_at,
+	            })));
+	          }
+	          const [{ data: fwd }, { data: rev }, { data: profile }] = await Promise.all([
+	            supabase.from("follows").select("followed_id").eq("follower_id", userId).limit(5000),
+	            supabase.from("follows").select("follower_id").eq("followed_id", userId).limit(5000),
+	            supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
+	          ]);
+	          if (ignore) return;
+	          setUserStats({
+	            followers: (rev || []).length,
+	            following: (fwd || []).length,
+	            likes: 0,
+	          });
+	          if (profile?.display_name) setDisplayName(profile.display_name);
+	        } catch {
+	          if (!ignore) {
+	            setUserShows([]);
+	            setUserStats({ followers: 0, following: 0, likes: 0 });
+	          }
+	        }
+	      })();
+	      return () => {
+	        ignore = true;
+	      };
+	    }, [supabase, userId]);
+
+	    const formatNumber = (n) => {
+	      if (n >= 1000000) return `${(n / 1000000).toFixed(1)}m`;
+	      if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+	      return String(n);
+	    };
+
+	    const formatDuration = (durationStr) => {
+	      return durationStr || "0:00";
+	    };
+
+	    return html`<div className="fade-in">
+	      <div className="section" style=${{ marginTop: 0 }}>
+	        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+	          <div style=${{ fontSize: "16px", fontWeight: 600 }}>${profileHandle || "Host name"}</div>
+	          <button className="pill icon" onClick=${() => setShowSettings(true)} aria-label="Settings" type="button">
+	            <${Icon} name="settings" />
+	          </button>
+	        </div>
+	        <div style=${{ display: "flex", gap: "16px", alignItems: "flex-start", marginBottom: "24px" }}>
+	          <div className="thumb" style=${{ width: "80px", height: "80px", borderRadius: "50%", flexShrink: 0 }}></div>
+	          <div style=${{ flex: 1, minWidth: 0 }}>
+	            <div style=${{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>${displayName || profileHandle || "User"}</div>
+	            <div style=${{ fontSize: "14px", color: "var(--muted)", marginBottom: "12px" }}>${profileHandle ? `@${profileHandle}` : "@handle"}</div>
+	            <div style=${{ display: "flex", gap: "16px", fontSize: "14px" }}>
+	              <div>
+	                <div style=${{ fontWeight: 700 }}>${formatNumber(userStats.followers)}</div>
+	                <div style=${{ color: "var(--muted)", fontSize: "12px" }}>followers</div>
+	              </div>
+	              <div>
+	                <div style=${{ fontWeight: 700 }}>${formatNumber(userStats.following)}</div>
+	                <div style=${{ color: "var(--muted)", fontSize: "12px" }}>following</div>
+	              </div>
+	              <div>
+	                <div style=${{ fontWeight: 700 }}>${formatNumber(userStats.likes)}</div>
+	                <div style=${{ color: "var(--muted)", fontSize: "12px" }}>likes</div>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+
+	      <div className="section">
+	        <div className="section-head">
+	          <div className="section-title">${userShows.length} Shows</div>
+	        </div>
+	        <div className="list">
+	          ${userShows.map((s) => html`<div className="item" style=${{ cursor: "pointer" }}>
+	            <div className="thumb" style=${{ backgroundImage: s.cover_url ? `url(${s.cover_url})` : "none", backgroundSize: "cover" }}></div>
+	            <div className="grow meta">
+	              <div className="t">${s.title || s.slug || "Untitled"}</div>
+	              <div className="s">
+	                ${formatDuration(s.duration)} · ${s.likes || 0} likes
+	                ${s.host ? ` · @${s.host}` : ""}
+	                ${s.location ? ` · ${s.location}` : ""}
+	                ${s.downloads ? ` · ${formatNumber(s.downloads)} downloads` : ""}
+	              </div>
+	            </div>
+	          </div>`)}
+	          ${(!userShows || !userShows.length) &&
+	          html`<div className="card">
+	            <div style=${{ color: "var(--muted)", lineHeight: 1.5 }}>${userId ? "No shows yet. Create one in Builder." : "Sign in to see your shows."}</div>
+	          </div>`}
+	        </div>
+	      </div>
+
+	      ${showSettings && html`<${SettingsModal}
+	        theme=${theme}
+	        setTheme=${setTheme}
+	        accent=${accent}
+	        setAccent=${setAccent}
+	        services=${services}
+	        toast=${toast}
+	        supabase=${supabase}
+	        supabaseSession=${supabaseSession}
+	        supabaseUrl=${supabaseUrl}
+	        setSupabaseUrl=${setSupabaseUrl}
+	        supabaseAnon=${supabaseAnon}
+	        setSupabaseAnon=${setSupabaseAnon}
+	        authedEmail=${authedEmail}
+	        supabaseEmail=${supabaseEmail}
+	        setSupabaseEmail=${setSupabaseEmail}
+	        onSignIn=${onSignIn}
+	        onSignOut=${onSignOut}
+	        profileHandle=${profileHandle}
+	        setProfileHandle=${setProfileHandle}
+	        zip=${zip}
+	        setZip=${setZip}
+	        zipOptIn=${zipOptIn}
+	        setZipOptIn=${setZipOptIn}
+	        onSaveProfile=${onSaveProfile}
+	        myLive=${myLive}
+	        onGoLive=${onGoLive}
+	        onEndLive=${onEndLive}
+	        following=${following}
+	        followers=${followers}
+	        toggleFollow=${toggleFollow}
+	        spotifyClientId=${spotifyClientId}
+	        setSpotifyClientId=${setSpotifyClientId}
+	        spotifyRedirect=${spotifyRedirect}
+	        setSpotifyRedirect=${setSpotifyRedirect}
+	        spotifyConnected=${spotifyConnected}
+	        onSpotifyAuth=${onSpotifyAuth}
+	        onSpotifyDisconnect=${onSpotifyDisconnect}
+	        soundcloudClientId=${soundcloudClientId}
+	        setSoundcloudClientId=${setSoundcloudClientId}
+	        soundcloudConnected=${soundcloudConnected}
+	        onSoundcloudAuth=${onSoundcloudAuth}
+	        onSoundcloudDisconnect=${onSoundcloudDisconnect}
+	        onClose=${() => setShowSettings(false)}
+	      />`}
     </div>`;
   }
 
   function App() {
-    const [tab, setTab] = useState("home");
+    const [tab, setTab] = useState("discover");
     const [theme, setTheme] = useLocalStorageState(STORAGE.theme, () => (window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light"));
     const [accent, setAccent] = useLocalStorageState(STORAGE.accent, () => ACCENTS[0].value);
     const { toast, show } = useToast();
 
-    const [supabaseUrl, setSupabaseUrl] = useLocalStorageString(SUPABASE_URL_KEY, "");
-    const [supabaseAnon, setSupabaseAnon] = useLocalStorageString(SUPABASE_ANON_KEY, "");
-    const { client: supabase, session: supabaseSession, authHeaders } = useSupabase(supabaseUrl, supabaseAnon);
+    const [supabaseUrl, setSupabaseUrl] = useLocalStorageString(SUPABASE_URL_KEY, DEFAULT_SUPABASE_URL);
+    const [supabaseAnon, setSupabaseAnon] = useLocalStorageString(SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON);
+    const { client: supabase, session: supabaseSession, authHeaders } = useSupabase(supabaseUrl || DEFAULT_SUPABASE_URL, supabaseAnon || DEFAULT_SUPABASE_ANON);
     const [supabaseEmail, setSupabaseEmail] = useState("");
 
     const [spotifyClientId, setSpotifyClientId] = useLocalStorageString(SPOTIFY_CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
@@ -2477,6 +3373,34 @@
 
     const [likes, setLikes] = useLocalStorageState(STORAGE.likes, () => []);
     const likeSet = useMemo(() => new Set(Array.isArray(likes) ? likes : []), [likes]);
+
+    const [currentTrack, setCurrentTrack] = useState(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [trackDuration, setTrackDuration] = useState(0);
+
+    useEffect(() => {
+      if (currentTrack) {
+        try {
+          localStorage.setItem("rs_current_track", JSON.stringify(currentTrack));
+        } catch {}
+      }
+    }, [currentTrack]);
+
+    useEffect(() => {
+      if (!isPlaying || !trackDuration) return;
+      const interval = setInterval(() => {
+        setCurrentTime((prev) => {
+          const next = prev + 1;
+          if (next >= trackDuration) {
+            setIsPlaying(false);
+            return trackDuration;
+          }
+          return next;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }, [isPlaying, trackDuration]);
 
     useEffect(() => {
       if (!supabase || !supabaseSession?.user?.id) return;
@@ -2661,12 +3585,12 @@
 
     async function startSpotifyAuth() {
       const clientId = spotifyClientId || DEFAULT_CLIENT_ID;
-      const redirectUri = spotifyRedirect || `${window.location.origin}/mobile/callback.html`;
+      // Auto-calculate redirect URI - must match exactly what's in Spotify dashboard
+      const redirectUri = `${window.location.origin}/mobile/callback.html`;
       if (!clientId) {
         show("Add Spotify Client ID");
         return;
       }
-      setSpotifyRedirect(redirectUri);
       try {
         const verifier = generateCodeVerifier();
         const challenge = await generateCodeChallenge(verifier);
@@ -2692,7 +3616,8 @@
       if (!code) return false;
       const storedState = sessionStorage.getItem("rs_pkce_state");
       const verifier = sessionStorage.getItem("rs_pkce_verifier");
-      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || "";
+      // Use stored redirect URI or fallback to auto-calculated one
+      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || `${window.location.origin}/mobile/callback.html`;
       const clientId = sessionStorage.getItem("rs_pkce_client") || DEFAULT_CLIENT_ID;
       if (!verifier || !storedState || storedState !== returnedState) {
         return false;
@@ -2710,7 +3635,11 @@
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body,
         });
-        if (!res.ok) throw new Error("Token exchange failed");
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error("Spotify token exchange failed:", errorText);
+          throw new Error(errorText || "Token exchange failed");
+        }
         const data = await res.json();
         setSpotifyToken(data.access_token);
         setSpotifyConnected(true);
@@ -2723,6 +3652,7 @@
         return true;
       } catch (err) {
         console.error("Spotify callback failed", err);
+        show("Spotify auth failed - check redirect URI in Spotify dashboard");
         return false;
       }
     }
@@ -2739,11 +3669,17 @@
         show("Add SoundCloud Client ID");
         return;
       }
+      // Auto-calculate redirect URI - must match what's configured in SoundCloud app
       const redirectUri = `${window.location.origin}${window.location.pathname}`;
       const authState = uid();
       sessionStorage.setItem("rs_sc_state", authState);
-      const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(authState)}`;
-      window.location.href = url;
+      try {
+        const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(authState)}`;
+        window.location.href = url;
+      } catch (err) {
+        console.error("SoundCloud auth failed", err);
+        show("Auth failed");
+      }
     }
 
     async function handleSoundcloudCallback() {
@@ -2751,9 +3687,22 @@
       if (!hash.includes("access_token")) return false;
       const params = new URLSearchParams(hash.replace(/^#/, ""));
       const token = params.get("access_token");
+      const error = params.get("error");
+      const errorDescription = params.get("error_description");
       const returnedState = params.get("state");
       const storedState = sessionStorage.getItem("rs_sc_state");
+      
+      if (error) {
+        console.error("SoundCloud auth error:", error, errorDescription);
+        show(`SoundCloud auth failed: ${errorDescription || error}`);
+        sessionStorage.removeItem("rs_sc_state");
+        const cleanUrl = window.location.pathname + window.location.search;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return false;
+      }
+      
       if (storedState && returnedState && storedState !== returnedState) {
+        show("SoundCloud auth state mismatch");
         return false;
       }
       if (!token) return false;
@@ -2771,6 +3720,16 @@
       setSoundcloudConnected(false);
       show("SoundCloud disconnected");
     }
+
+    // Auto-populate Supabase values with defaults if empty
+    useEffect(() => {
+      if (!supabaseUrl || supabaseUrl.trim() === "") {
+        setSupabaseUrl(DEFAULT_SUPABASE_URL);
+      }
+      if (!supabaseAnon || supabaseAnon.trim() === "") {
+        setSupabaseAnon(DEFAULT_SUPABASE_ANON);
+      }
+    }, []);
 
     useEffect(() => {
       handleSpotifyCallback().catch(() => {});
@@ -3023,34 +3982,37 @@
       <${Icon} name="spark" />
     </button>`;
 
-    let title = "RADIO·LAB";
-    let subtitle = "curate · speak · share";
+    let title = "discover";
+    let subtitle = "";
 
-    if (tab === "home") title = "RADIO·LAB";
-    if (tab === "find") title = "Find";
-    if (tab === "builder") title = "Builder";
-    if (tab === "sessions") title = "Sessions";
-    if (tab === "profile") title = "Profile";
+    if (tab === "discover") title = "discover";
+    if (tab === "build") title = "builder";
+    if (tab === "listen") title = "listen";
+    if (tab === "me") title = profileHandle ? `@${profileHandle}` : "me";
 
     const screen =
-      tab === "home"
-        ? html`<${HomeScreen}
-            recentSessions=${recentSessions}
-            services=${services}
-            onNewShow=${onNewShow}
-            onBrowse=${() => setTab("sessions")}
-            onLoadSession=${onLoadSession}
+      tab === "discover"
+        ? html`<${DiscoverScreen}
+            supabase=${supabase}
+            supabaseSession=${supabaseSession}
+            authHeaders=${authHeaders}
+            zip=${zip}
+            zipOptIn=${zipOptIn}
+            likes=${likeSet}
+            toggleLike=${toggleLike}
+            following=${following}
+            followers=${followers}
+            toggleFollow=${toggleFollow}
+            followVersion=${followVersion}
+            onLoad=${(s) => {
+              onLoadSession(s);
+              setCurrentTrack({ id: s.id, title: s.title, host: s.host, cover_url: s.cover_url, duration: 0 });
+              setTrackDuration(0);
+            }}
+            toast=${show}
+            onNavigateToListen=${() => setTab("listen")}
           />`
-        : tab === "find"
-        ? html`<${FindScreen}
-            tracks=${SAMPLE_TRACKS}
-            onAddTrack=${onAddTrack}
-            soundcloudClientId=${soundcloudClientId}
-            soundcloudToken=${soundcloudToken}
-            spotifyToken=${spotifyToken}
-            soundcloudAvailable=${soundcloudAvailable}
-          />`
-        : tab === "builder"
+        : tab === "build"
         ? html`<${BuilderScreen}
             segments=${segments}
             setSegments=${setSegments}
@@ -3061,23 +4023,24 @@
             zip=${zip}
             zipOptIn=${zipOptIn}
           />`
-		        : tab === "sessions"
-		        ? html`<${SessionsScreen}
-		            supabase=${supabase}
-		            supabaseSession=${supabaseSession}
-		            authHeaders=${authHeaders}
-		            zip=${zip}
-		            zipOptIn=${zipOptIn}
-		            likes=${likeSet}
-		            toggleLike=${toggleLike}
-		            following=${following}
-		            followers=${followers}
-		            toggleFollow=${toggleFollow}
-		            followVersion=${followVersion}
-		            onLoad=${onLoadSession}
-		            toast=${show}
-	          />`
-		        : html`<${ProfileScreen}
+        : tab === "listen"
+        ? html`<${ListenScreen}
+            supabase=${supabase}
+            supabaseSession=${supabaseSession}
+            authHeaders=${authHeaders}
+            likes=${likeSet}
+            toggleLike=${toggleLike}
+            toast=${show}
+            currentTrack=${currentTrack}
+            setCurrentTrack=${setCurrentTrack}
+            isPlaying=${isPlaying}
+            setIsPlaying=${setIsPlaying}
+            currentTime=${currentTime}
+            setCurrentTime=${setCurrentTime}
+            trackDuration=${trackDuration}
+            setTrackDuration=${setTrackDuration}
+          />`
+        : html`<${ProfileScreen}
 	            theme=${theme}
 	            setTheme=${(t) => {
 	              setTheme(t);
@@ -3131,6 +4094,14 @@
     return html`<div className="shell">
       <${TopBar} title=${title} subtitle=${subtitle} right=${right} />
       <div className="content">${screen}</div>
+      <${NowPlayingBar}
+        currentTrack=${currentTrack}
+        isPlaying=${isPlaying}
+        currentTime=${currentTime}
+        duration=${trackDuration}
+        onPlayPause=${() => setIsPlaying(!isPlaying)}
+        onNavigateToListen=${() => setTab("listen")}
+      />
       <${TabBar} value=${tab} onChange=${setTab} />
       <${Toast} toast=${toast} />
     </div>`;
