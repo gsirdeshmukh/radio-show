@@ -21,6 +21,7 @@
   const SOUNDCLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
   const SOUNDCLOUD_TOKEN_KEY = "rs_sc_token";
   const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
+  const DEFAULT_SOUNDCLOUD_CLIENT_ID = "a281953d7fedd08d1a49c517fdbeba2c"; // Public SoundCloud client ID for default access
   const SPOTIFY_SCOPES = "streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative user-read-private user-read-email";
 
   const ACCENTS = [
@@ -358,9 +359,9 @@
               <div className="thumb"></div>
               <div className="grow meta">
                 <div className="t">${svc.name}</div>
-                <div className="s">${svc.connected ? "Connected" : "Not connected"}</div>
+                <div className="s">${svc.connected ? "Connected" : svc.available ? "Available" : "Not connected"}</div>
               </div>
-              <div className="chip">${svc.connected ? "Ready" : "Optional"}</div>
+              <div className="chip">${svc.connected ? "Ready" : svc.available ? "Default" : "Optional"}</div>
             </div>`
           )}
         </div>
@@ -368,16 +369,121 @@
     </div>`;
   }
 
-  function FindScreen({ tracks, onAddTrack }) {
+  async function searchSoundCloud(query, clientId, token) {
+    if (!query || !clientId) return [];
+    try {
+      const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${encodeURIComponent(clientId)}&limit=20`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`SoundCloud API error: ${res.status}`);
+      const data = await res.json();
+      return (data.collection || []).map((track) => ({
+        id: `sc_${track.id}`,
+        title: track.title || "Untitled",
+        artist: track.user?.username || track.user?.full_name || "Unknown Artist",
+        source: "SoundCloud",
+        duration: formatTrackDuration(track.duration),
+        soundcloudId: track.id,
+        uri: track.permalink_url,
+        artwork: track.artwork_url,
+      }));
+    } catch (err) {
+      console.error("SoundCloud search failed", err);
+      return [];
+    }
+  }
+
+  async function searchSpotify(query, token) {
+    if (!query || !token) return [];
+    try {
+      const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=20`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Spotify API error: ${res.status}`);
+      const data = await res.json();
+      return (data.tracks?.items || []).map((track) => ({
+        id: `sp_${track.id}`,
+        title: track.name || "Untitled",
+        artist: track.artists?.map((a) => a.name).join(", ") || "Unknown Artist",
+        source: "Spotify",
+        duration: formatTrackDuration(track.duration_ms),
+        spotifyId: track.id,
+        uri: track.uri,
+        artwork: track.album?.images?.[0]?.url,
+      }));
+    } catch (err) {
+      console.error("Spotify search failed", err);
+      return [];
+    }
+  }
+
+  function formatTrackDuration(ms) {
+    if (!ms) return "0:00";
+    const total = Math.floor(Number(ms) / 1000);
+    const m = String(Math.floor(total / 60));
+    const s = String(total % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  function FindScreen({ tracks, onAddTrack, soundcloudClientId, soundcloudToken, spotifyToken, soundcloudAvailable }) {
     const [mode, setMode] = useState("search");
     const [q, setQ] = useState("");
+    const [provider, setProvider] = useState("soundcloud");
+    const [searchResults, setSearchResults] = useState([]);
+    const [searching, setSearching] = useState(false);
+
+    const availableProviders = useMemo(() => {
+      const providers = [];
+      if (soundcloudAvailable) providers.push({ value: "soundcloud", label: "SoundCloud" });
+      if (spotifyToken) providers.push({ value: "spotify", label: "Spotify" });
+      return providers.length ? providers : [{ value: "soundcloud", label: "SoundCloud" }];
+    }, [soundcloudAvailable, spotifyToken]);
+
+    useEffect(() => {
+      if (availableProviders.length && !availableProviders.find((p) => p.value === provider)) {
+        setProvider(availableProviders[0].value);
+      }
+    }, [availableProviders, provider]);
+
+    useEffect(() => {
+      if (mode !== "search" || !q.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      let cancelled = false;
+      setSearching(true);
+      (async () => {
+        try {
+          let results = [];
+          if (provider === "soundcloud") {
+            results = await searchSoundCloud(q, soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID, soundcloudToken);
+          } else if (provider === "spotify" && spotifyToken) {
+            results = await searchSpotify(q, spotifyToken);
+          }
+          if (!cancelled) setSearchResults(results);
+        } catch (err) {
+          console.error("Search error", err);
+          if (!cancelled) setSearchResults([]);
+        } finally {
+          if (!cancelled) setSearching(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [q, provider, mode, soundcloudClientId, soundcloudToken, spotifyToken]);
 
     const filtered = useMemo(() => {
+      if (mode === "search") {
+        return searchResults;
+      }
       const query = q.trim().toLowerCase();
-      const base = mode === "saved" ? tracks.slice(0, 2) : tracks;
+      const base = tracks.slice(0, 10);
       if (!query) return base;
       return base.filter((t) => `${t.title} ${t.artist} ${t.source}`.toLowerCase().includes(query));
-    }, [mode, q, tracks]);
+    }, [mode, q, tracks, searchResults]);
 
     return html`<div className="fade-in">
       <div className="section" style=${{ marginTop: 0 }}>
@@ -395,20 +501,44 @@
         />
       </div>
 
+      ${mode === "search" && availableProviders.length > 1 && html`<div className="section" style=${{ marginTop: "-8px" }}>
+        <${Segmented}
+          options=${availableProviders}
+          value=${provider}
+          onChange=${setProvider}
+        />
+      </div>`}
+
       <div className="section">
         <div className="field">
-          <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "saved" ? "Filter saved tracks…" : "Search tracks…"} />
-          <button className="pill icon" onClick=${() => setQ("")} aria-label="Clear" type="button">
+          <input
+            value=${q}
+            onChange=${(e) => setQ(e.target.value)}
+            placeholder=${mode === "saved" ? "Filter saved tracks…" : `Search ${provider === "soundcloud" ? "SoundCloud" : "Spotify"} tracks…`}
+            disabled=${searching}
+          />
+          ${q && html`<button className="pill icon" onClick=${() => setQ("")} aria-label="Clear" type="button">
             <span style=${{ fontWeight: 700, opacity: 0.75 }}>×</span>
-          </button>
+          </button>`}
         </div>
       </div>
 
       <div className="section">
+        ${searching && html`<div className="card">
+          <div style=${{ color: "var(--muted)", textAlign: "center" }}>Searching...</div>
+        </div>`}
+        ${!searching && mode === "search" && !q.trim() && html`<div className="card">
+          <div style=${{ color: "var(--muted)", lineHeight: 1.5, textAlign: "center" }}>
+            Enter a search query to find tracks from ${provider === "soundcloud" ? "SoundCloud" : "Spotify"}
+          </div>
+        </div>`}
+        ${!searching && mode === "search" && q.trim() && !filtered.length && html`<div className="card">
+          <div style=${{ color: "var(--muted)", lineHeight: 1.5, textAlign: "center" }}>No results found</div>
+        </div>`}
         <div className="list">
           ${filtered.map(
             (t) => html`<div className="item">
-              <div className="thumb"></div>
+              ${t.artwork ? html`<div className="thumb" style=${{ backgroundImage: `url(${t.artwork})`, backgroundSize: "cover" }}></div>` : html`<div className="thumb"></div>`}
               <div className="grow meta">
                 <div className="t">${t.title}</div>
                 <div className="s">${t.artist} · ${t.source} · ${t.duration}</div>
@@ -423,10 +553,182 @@
     </div>`;
   }
 
-	  function BuilderScreen({ segments, setSegments, toast }) {
+	  function SaveDialog({ segments, onSaveLocal, onSaveSupabase, onClose, supabase, authHeaders, profileHandle, zip, zipOptIn }) {
+    const [title, setTitle] = useState("");
+    const [genre, setGenre] = useState("");
+    const [tags, setTags] = useState("");
+    const [visibility, setVisibility] = useState("public");
+    const [saving, setSaving] = useState(false);
+
+    const parseDuration = (durationStr) => {
+      const parts = String(durationStr || "0:00").split(":");
+      const minutes = parseInt(parts[0] || "0", 10);
+      const seconds = parseInt(parts[1] || "0", 10);
+      return (minutes * 60 + seconds) * 1000;
+    };
+
+    const calculateTotalDuration = () => {
+      return segments.reduce((total, seg) => total + parseDuration(seg.duration), 0);
+    };
+
+    const formatSegments = () => {
+      return segments.map((seg) => {
+        const base = {
+          id: seg.id || `seg_${Date.now()}_${Math.random()}`,
+          type: seg.type === "voice" ? "voice" : seg.source === "Spotify" ? "spotify" : seg.source === "SoundCloud" ? "soundcloud" : "upload",
+          title: seg.title || "Untitled",
+          subtitle: seg.artist || "—",
+          duration: parseDuration(seg.duration),
+          fadeIn: !!seg.fade,
+          fadeOut: !!seg.fade,
+          cue: !!seg.cue,
+        };
+        if (seg.audioData) {
+          base.audioData = seg.audioData; // Base64 data URL for voice recordings
+        }
+        if (seg.uri) base.uri = seg.uri;
+        if (seg.spotifyId) base.spotifyId = seg.spotifyId;
+        if (seg.soundcloudId) base.soundcloudId = seg.soundcloudId;
+        return base;
+      });
+    };
+
+    const handleSaveLocal = async () => {
+      if (!title.trim()) {
+        toast("Please enter a title");
+        return;
+      }
+      setSaving(true);
+      try {
+        const payload = {
+          version: 2,
+          tracksOnly: false,
+          meta: {
+            title: title.trim(),
+            host: profileHandle || "Anonymous",
+            genre: genre.trim() || null,
+            tags: tags.trim() ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+            date: new Date().toISOString().split("T")[0],
+            duration_ms: calculateTotalDuration(),
+          },
+          segments: formatSegments(),
+        };
+        await onSaveLocal(payload);
+        onClose();
+      } catch (err) {
+        toast("Save failed: " + (err.message || "Unknown error"));
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleSaveSupabase = async () => {
+      if (!title.trim()) {
+        toast("Please enter a title");
+        return;
+      }
+      if (!supabase) {
+        toast("Supabase not configured");
+        return;
+      }
+      setSaving(true);
+      try {
+        const payload = {
+          meta: {
+            title: title.trim(),
+            host: profileHandle || "Anonymous",
+            genre: genre.trim() || null,
+            tags: tags.trim() ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+            duration_ms: calculateTotalDuration(),
+            visibility: visibility,
+            location_zip: zipOptIn && zip ? zip.trim() : null,
+            location_opt_in: zipOptIn && zip ? true : false,
+          },
+          segments: formatSegments(),
+        };
+
+        const { data, error } = await supabase.functions.invoke("create_session", {
+          headers: authHeaders || {},
+          body: { payload },
+        });
+
+        if (error) throw error;
+        toast("Published to Supabase!");
+        onClose();
+      } catch (err) {
+        toast("Publish failed: " + (err.message || "Unknown error"));
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return html`<div className="modal-overlay" onClick=${onClose}>
+      <div className="modal" onClick=${(e) => e.stopPropagation()}>
+        <div className="section" style=${{ marginTop: 0 }}>
+          <div className="section-head">
+            <div className="section-title">Save Session</div>
+            <button className="pill icon" onClick=${onClose} aria-label="Close" type="button">×</button>
+          </div>
+        </div>
+        <div className="section">
+          <div className="field">
+            <div style=${{ marginBottom: "8px", fontSize: "13px", fontWeight: 600 }}>Title *</div>
+            <input value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="My Radio Show" />
+          </div>
+          <div className="field">
+            <div style=${{ marginBottom: "8px", fontSize: "13px", fontWeight: 600 }}>Genre</div>
+            <input value=${genre} onChange=${(e) => setGenre(e.target.value)} placeholder="house, breaks, ambient..." />
+          </div>
+          <div className="field">
+            <div style=${{ marginBottom: "8px", fontSize: "13px", fontWeight: 600 }}>Tags (comma-separated)</div>
+            <input value=${tags} onChange=${(e) => setTags(e.target.value)} placeholder="chill, morning, live" />
+          </div>
+          ${supabase && html`<div className="field">
+            <div style=${{ marginBottom: "8px", fontSize: "13px", fontWeight: 600 }}>Visibility</div>
+            <${Segmented}
+              options=${[
+                { label: "Public", value: "public" },
+                { label: "Unlisted", value: "unlisted" },
+                { label: "Followers", value: "followers" },
+              ]}
+              value=${visibility}
+              onChange=${setVisibility}
+            />
+          </div>`}
+        </div>
+        <div className="section">
+          <div className="row">
+            <button
+              className="pill"
+              style=${{ flex: 1 }}
+              onClick=${handleSaveLocal}
+              disabled=${saving || !title.trim()}
+              type="button"
+            >
+              Save Locally
+            </button>
+            ${supabase && html`<button
+              className="pill primary"
+              style=${{ flex: 1 }}
+              onClick=${handleSaveSupabase}
+              disabled=${saving || !title.trim()}
+              type="button"
+            >
+              ${saving ? "Publishing..." : "Publish to Supabase"}
+            </button>`}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+	  function BuilderScreen({ segments, setSegments, toast, supabase, authHeaders, profileHandle, zip, zipOptIn }) {
     const [recording, setRecording] = useState(false);
     const [seconds, setSeconds] = useState(0);
+    const [showSaveDialog, setShowSaveDialog] = useState(false);
     const timerRef = useRef(null);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
 
     useEffect(() => {
       if (!recording) return;
@@ -438,8 +740,92 @@
     }, [recording]);
 
     useEffect(() => {
-      if (!recording) setSeconds(0);
+      if (!recording) {
+        setSeconds(0);
+        audioChunksRef.current = [];
+      }
     }, [recording]);
+
+    const startRecording = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
+        });
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach((track) => track.stop());
+        };
+
+        mediaRecorder.start();
+        setRecording(true);
+      } catch (err) {
+        console.error("Recording failed", err);
+        toast("Microphone access denied or unavailable");
+      }
+    };
+
+    const stopRecording = () => {
+      if (mediaRecorderRef.current && recording) {
+        mediaRecorderRef.current.stop();
+        setRecording(false);
+      }
+    };
+
+    const addVoice = async () => {
+      stopRecording();
+      
+      // Wait a bit for the recording to finalize
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      try {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorderRef.current?.mimeType || "audio/webm",
+        });
+
+        // Convert to base64 data URL
+        const reader = new FileReader();
+        const audioData = await new Promise((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(audioBlob);
+        });
+
+        const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+        const ss = String(seconds % 60).padStart(2, "0");
+
+        const seg = {
+          id: `v_${Date.now()}`,
+          type: "voice",
+          title: "Voice take",
+          artist: "Host mic",
+          source: "Mic",
+          duration: `${mm}:${ss}`,
+          cue: true,
+          fade: true,
+          audioData: audioData, // Base64 data URL
+        };
+        setSegments((prev) => [seg, ...prev]);
+        toast("Voice take added");
+      } catch (err) {
+        console.error("Failed to process recording", err);
+        toast("Failed to save recording");
+      }
+    };
+
+    const cancelRecording = () => {
+      stopRecording();
+      audioChunksRef.current = [];
+      toast("Recording cancelled");
+    };
 
     const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
@@ -449,22 +835,6 @@
     };
 
     const remove = (id) => setSegments((prev) => prev.filter((s) => s.id !== id));
-
-    const addVoice = () => {
-      setRecording(false);
-      const seg = {
-        id: `v_${Date.now()}`,
-        type: "voice",
-        title: "Voice take",
-        artist: "Host mic",
-        source: "Mic",
-        duration: `${mm}:${ss}`,
-        cue: true,
-        fade: true,
-      };
-      setSegments((prev) => [seg, ...prev]);
-      toast("Voice take added");
-    };
 
     return html`<div className="fade-in">
       <div className="section" style=${{ marginTop: 0 }}>
@@ -483,8 +853,8 @@
           <div className="row" style=${{ marginTop: "12px" }}>
             ${recording
               ? html`<button className="pill primary" onClick=${addVoice} type="button">Stop & Add</button>
-                  <button className="pill" onClick=${() => setRecording(false)} type="button">Cancel</button>`
-              : html`<button className="pill primary" onClick=${() => setRecording(true)} type="button">
+                  <button className="pill" onClick=${cancelRecording} type="button">Cancel</button>`
+              : html`<button className="pill primary" onClick=${startRecording} type="button">
                   <span style=${{ display: "inline-flex", marginRight: "8px" }}><${Icon} name="mic" /></span>
                   Start Recording
                 </button>`}
@@ -535,10 +905,49 @@
             <span style=${{ display: "inline-flex", marginRight: "8px" }}><${Icon} name="play" /></span>
             Play
           </button>
-          <button className="pill" style=${{ flex: 1 }} onClick=${() => toast("Publish (prototype)")} type="button">Publish</button>
+          <button className="pill" style=${{ flex: 1 }} onClick=${() => setShowSaveDialog(true)} type="button" disabled=${!segments.length}>
+            Publish
+          </button>
         </div>
       </div>
+      ${showSaveDialog && html`<${SaveDialog}
+        segments=${segments}
+        onSaveLocal=${async (payload) => {
+          try {
+            const sessions = JSON.parse(localStorage.getItem(STORAGE.recent) || "[]");
+            const sessionEntry = {
+              id: `local_${Date.now()}`,
+              title: payload.meta.title,
+              trackCount: payload.segments.length,
+              duration: formatDuration(payload.meta.duration_ms || 0),
+              genre: payload.meta.genre,
+              savedAt: Date.now(),
+              payload: payload,
+            };
+            const updated = [sessionEntry, ...sessions].slice(0, 10);
+            localStorage.setItem(STORAGE.recent, JSON.stringify(updated));
+            toast("Saved locally");
+          } catch (err) {
+            toast("Save failed: " + (err.message || "Unknown error"));
+            throw err;
+          }
+        }}
+        onSaveSupabase=${async () => {}}
+        onClose=${() => setShowSaveDialog(false)}
+        supabase=${supabase}
+        authHeaders=${authHeaders}
+        profileHandle=${profileHandle}
+        zip=${zip}
+        zipOptIn=${zipOptIn}
+      />`}
 	    </div>`;
+	  }
+
+	  function formatDuration(ms) {
+	    const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+	    const m = String(Math.floor(total / 60));
+	    const s = String(total % 60).padStart(2, "0");
+	    return `${m}:${s}`;
 	  }
 
 	  function LiveRoomScreen({ supabase, live, userId, onClose, toast }) {
@@ -2052,9 +2461,11 @@
     const [spotifyRedirect, setSpotifyRedirect] = useLocalStorageString(SPOTIFY_REDIRECT_KEY, "");
     const [spotifyConnected, setSpotifyConnected] = useState(!!spotifyToken);
 
-    const [soundcloudClientId, setSoundcloudClientId] = useLocalStorageString(SOUNDCLOUD_CLIENT_ID_KEY, "");
+    const [soundcloudClientId, setSoundcloudClientId] = useLocalStorageString(SOUNDCLOUD_CLIENT_ID_KEY, DEFAULT_SOUNDCLOUD_CLIENT_ID);
     const [soundcloudToken, setSoundcloudToken] = useLocalStorageString(SOUNDCLOUD_TOKEN_KEY, "");
+    // SoundCloud is available by default (has client ID), connected means authenticated
     const [soundcloudConnected, setSoundcloudConnected] = useState(!!soundcloudToken);
+    const soundcloudAvailable = useMemo(() => !!(soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID), [soundcloudClientId]);
 
     const [profileHandle, setProfileHandle] = useLocalStorageString(PROFILE_HANDLE_KEY, "");
     const [zip, setZip] = useLocalStorageString(PROFILE_ZIP_KEY, "");
@@ -2323,7 +2734,7 @@
     }
 
     async function startSoundcloudAuth() {
-      const clientId = soundcloudClientId;
+      const clientId = soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID;
       if (!clientId) {
         show("Add SoundCloud Client ID");
         return;
@@ -2429,11 +2840,11 @@
 
     const services = useMemo(
       () => [
+        { name: "SoundCloud", connected: soundcloudConnected, available: soundcloudAvailable },
         { name: "Spotify", connected: spotifyConnected },
         { name: "Apple Music", connected: false },
-        { name: "SoundCloud", connected: soundcloudConnected },
       ],
-      [spotifyConnected, soundcloudConnected]
+      [spotifyConnected, soundcloudConnected, soundcloudAvailable]
     );
 
     useEffect(() => {
@@ -2631,9 +3042,25 @@
             onLoadSession=${onLoadSession}
           />`
         : tab === "find"
-        ? html`<${FindScreen} tracks=${SAMPLE_TRACKS} onAddTrack=${onAddTrack} />`
+        ? html`<${FindScreen}
+            tracks=${SAMPLE_TRACKS}
+            onAddTrack=${onAddTrack}
+            soundcloudClientId=${soundcloudClientId}
+            soundcloudToken=${soundcloudToken}
+            spotifyToken=${spotifyToken}
+            soundcloudAvailable=${soundcloudAvailable}
+          />`
         : tab === "builder"
-        ? html`<${BuilderScreen} segments=${segments} setSegments=${setSegments} toast=${show} />`
+        ? html`<${BuilderScreen}
+            segments=${segments}
+            setSegments=${setSegments}
+            toast=${show}
+            supabase=${supabase}
+            authHeaders=${authHeaders}
+            profileHandle=${profileHandle}
+            zip=${zip}
+            zipOptIn=${zipOptIn}
+          />`
 		        : tab === "sessions"
 		        ? html`<${SessionsScreen}
 		            supabase=${supabase}
