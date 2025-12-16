@@ -157,24 +157,48 @@
     }, [url, anon]);
 
     const [session, setSession] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
       if (!client) {
         setSession(null);
+        setLoading(false);
         return;
       }
       let sub = null;
+      let mounted = true;
+      
+      // Check for existing session first
       client.auth
         .getSession()
-        .then(({ data }) => setSession(data?.session || null))
-        .catch(() => {});
+        .then(({ data }) => {
+          if (mounted) {
+            setSession(data?.session || null);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setSession(null);
+            setLoading(false);
+          }
+        });
+      
+      // Listen for auth state changes
       try {
-        const { data } = client.auth.onAuthStateChange((_event, next) => setSession(next || null));
+        const { data } = client.auth.onAuthStateChange((_event, next) => {
+          if (mounted) {
+            setSession(next || null);
+            setLoading(false);
+          }
+        });
         sub = data?.subscription || null;
       } catch {
         sub = null;
       }
+      
       return () => {
+        mounted = false;
         try {
           sub?.unsubscribe();
         } catch {}
@@ -186,7 +210,7 @@
       return token ? { Authorization: `Bearer ${token}` } : {};
     }, [session]);
 
-    return { client, session, authHeaders };
+    return { client, session, authHeaders, loading };
   }
 
   function useToast() {
@@ -291,6 +315,163 @@
     if (!toast) return null;
     return html`<div className="toast fade-in" role="status" aria-live="polite">
       <div className="toast-inner">${toast.message}</div>
+    </div>`;
+  }
+
+  function SignInScreen({
+    supabase,
+    supabaseSession,
+    supabaseEmail,
+    setSupabaseEmail,
+    onSupabaseSignIn,
+    spotifyClientId,
+    spotifyConnected,
+    onSpotifyAuth,
+    soundcloudClientId,
+    soundcloudConnected,
+    onSoundcloudAuth,
+    toast,
+  }) {
+    const authedEmail = supabaseSession?.user?.email || "";
+    const isSupabaseConnected = !!authedEmail;
+    const isSpotifyConnected = !!spotifyConnected;
+    const isSoundcloudConnected = !!soundcloudConnected;
+
+    return html`<div style=${{ 
+      minHeight: "100dvh", 
+      display: "flex", 
+      flexDirection: "column", 
+      alignItems: "center", 
+      justifyContent: "center", 
+      padding: "var(--pad)",
+      textAlign: "center"
+    }}>
+      <div style=${{ marginBottom: "80px" }}>
+        <h1 style=${{ 
+          fontSize: "32px", 
+          fontWeight: 700, 
+          margin: "0 0 12px",
+          letterSpacing: "0.02em",
+          color: "var(--text)"
+        }}>Radio Lab</h1>
+        <div style=${{ 
+          fontSize: "18px", 
+          color: "var(--muted)",
+          textTransform: "lowercase",
+          letterSpacing: "0.01em"
+        }}>sign in</div>
+      </div>
+
+      <div style=${{ width: "100%", maxWidth: "320px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div className="card" style=${{ padding: "20px" }}>
+          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>Services</div>
+          
+          <div style=${{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style=${{ flex: 1, textAlign: "left" }}>
+                <div style=${{ fontSize: "15px", fontWeight: 600 }}>Supabase</div>
+                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSupabaseConnected ? authedEmail : "Required for app features"}</div>
+              </div>
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                ${isSupabaseConnected 
+                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
+                  : html`<div className="chip">Not connected</div>`}
+              </div>
+            </div>
+
+            ${!isSupabaseConnected && html`
+              <div style=${{ marginTop: "8px" }}>
+                <div className="field">
+                  <input 
+                    value=${supabaseEmail} 
+                    onChange=${(e) => setSupabaseEmail(e.target.value)} 
+                    placeholder="you@example.com"
+                    type="email"
+                  />
+                </div>
+                <button 
+                  className="pill primary" 
+                  onClick=${onSupabaseSignIn} 
+                  type="button"
+                  style=${{ width: "100%", marginTop: "8px" }}
+                  disabled=${!supabaseEmail.trim()}
+                >
+                  Sign in with Email
+                </button>
+              </div>
+            `}
+          </div>
+        </div>
+
+        <div className="card" style=${{ padding: "20px" }}>
+          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>Music Services</div>
+          
+          <div style=${{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style=${{ flex: 1, textAlign: "left" }}>
+                <div style=${{ fontSize: "15px", fontWeight: 600 }}>Spotify</div>
+                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSpotifyConnected ? "Connected" : spotifyClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
+              </div>
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                ${isSpotifyConnected 
+                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
+                  : html`<div className="chip">Not connected</div>`}
+              </div>
+            </div>
+
+            ${!isSpotifyConnected && spotifyClientId && html`
+              <button 
+                className="pill primary" 
+                onClick=${onSpotifyAuth} 
+                type="button"
+                style=${{ width: "100%", marginTop: "8px" }}
+              >
+                Connect Spotify
+              </button>
+            `}
+
+            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "8px" }}>
+              <div style=${{ flex: 1, textAlign: "left" }}>
+                <div style=${{ fontSize: "15px", fontWeight: 600 }}>SoundCloud</div>
+                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSoundcloudConnected ? "Connected" : soundcloudClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
+              </div>
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                ${isSoundcloudConnected 
+                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
+                  : html`<div className="chip">Not connected</div>`}
+              </div>
+            </div>
+
+            ${!isSoundcloudConnected && soundcloudClientId && html`
+              <button 
+                className="pill primary" 
+                onClick=${onSoundcloudAuth} 
+                type="button"
+                style=${{ width: "100%", marginTop: "8px" }}
+              >
+                Connect SoundCloud
+              </button>
+            `}
+          </div>
+        </div>
+
+        ${isSupabaseConnected && html`
+          <div style=${{ marginTop: "20px", padding: "16px", background: "var(--surface)", borderRadius: "12px", border: "1px solid var(--border)" }}>
+            <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "8px" }}>Signed in as ${authedEmail}</div>
+            <div style=${{ fontSize: "12px", color: "var(--muted)", lineHeight: "1.5", marginBottom: "12px" }}>
+              You can access the app. Connect music services below or continue to the app.
+            </div>
+            <button 
+              className="pill primary" 
+              onClick=${() => window.location.reload()} 
+              type="button"
+              style=${{ width: "100%" }}
+            >
+              Continue to App
+            </button>
+          </div>
+        `}
+      </div>
     </div>`;
   }
 
@@ -3092,6 +3273,14 @@
             <div className="field">
               <input value=${spotifyClientId} onChange=${(e) => setSpotifyClientId(e.target.value)} placeholder="Client ID (PKCE)" />
             </div>
+            <div className="field">
+              <input value=${spotifyRedirect} onChange=${(e) => setSpotifyRedirect(e.target.value)} placeholder="Redirect URI (optional, auto if empty)" />
+            </div>
+            <div style=${{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.4 }}>
+              ${!spotifyRedirect ? `Auto: ${window.location.origin}/mobile/` : `Custom: ${spotifyRedirect}`}
+              <br />
+              <span style=${{ fontSize: "11px" }}>Must match your Spotify Dashboard settings exactly</span>
+            </div>
             <div className="row">
               ${spotifyConnected
                 ? html`<button className="pill danger" onClick=${onSpotifyDisconnect} type="button">Disconnect</button>`
@@ -3110,6 +3299,13 @@
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
             <div className="field">
               <input value=${soundcloudClientId} onChange=${(e) => setSoundcloudClientId(e.target.value)} placeholder="Client ID" />
+            </div>
+            ${(/^192\.168\./.test(window.location.hostname) || /^10\./.test(window.location.hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname)) &&
+            html`<div style=${{ fontSize: "12px", color: "var(--danger)", lineHeight: 1.4, padding: "8px", background: "rgba(255, 59, 48, 0.1)", borderRadius: "8px" }}>
+              ⚠️ SoundCloud doesn't allow local IPs. Use localhost or deploy to a public URL.
+            </div>`}
+            <div style=${{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.4 }}>
+              Redirect: ${window.location.origin}${window.location.pathname}
             </div>
             <div className="row">
               ${soundcloudConnected
@@ -3349,7 +3545,7 @@
 
     const [supabaseUrl, setSupabaseUrl] = useLocalStorageString(SUPABASE_URL_KEY, DEFAULT_SUPABASE_URL);
     const [supabaseAnon, setSupabaseAnon] = useLocalStorageString(SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON);
-    const { client: supabase, session: supabaseSession, authHeaders } = useSupabase(supabaseUrl || DEFAULT_SUPABASE_URL, supabaseAnon || DEFAULT_SUPABASE_ANON);
+    const { client: supabase, session: supabaseSession, authHeaders, loading: supabaseLoading } = useSupabase(supabaseUrl || DEFAULT_SUPABASE_URL, supabaseAnon || DEFAULT_SUPABASE_ANON);
     const [supabaseEmail, setSupabaseEmail] = useState("");
 
     const [spotifyClientId, setSpotifyClientId] = useLocalStorageString(SPOTIFY_CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
@@ -3585,12 +3781,16 @@
 
     async function startSpotifyAuth() {
       const clientId = spotifyClientId || DEFAULT_CLIENT_ID;
-      // Auto-calculate redirect URI - must match exactly what's in Spotify dashboard
-      const redirectUri = `${window.location.origin}/mobile/callback.html`;
+      // Use custom redirect URI if set, otherwise use current origin + /mobile/
+      // This allows local IP addresses like 192.168.1.71:5173 to work
+      // Default matches what user configured in Spotify Dashboard: http://192.168.1.71:5173/mobile/
+      const redirectUri = spotifyRedirect || `${window.location.origin}/mobile/`;
+      
       if (!clientId) {
         show("Add Spotify Client ID");
         return;
       }
+
       try {
         const verifier = generateCodeVerifier();
         const challenge = await generateCodeChallenge(verifier);
@@ -3602,26 +3802,65 @@
         const scopes = encodeURIComponent(SPOTIFY_SCOPES);
         const redirect = encodeURIComponent(redirectUri);
         const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${clientId}&scope=${scopes}&redirect_uri=${redirect}&code_challenge_method=S256&code_challenge=${challenge}&state=${authState}&show_dialog=true`;
+        console.log("Starting Spotify auth with redirect URI:", redirectUri);
         window.location.href = url;
       } catch (err) {
         console.error("Spotify auth failed", err);
-        show("Auth failed");
+        show("Auth failed: " + (err.message || "Unknown error"));
       }
     }
 
     async function handleSpotifyCallback() {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
-      const returnedState = params.get("state");
+      // Check both query params (from /mobile/?code=...) and hash (from callback.html redirect)
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      
+      // Try query params first, then hash
+      const code = searchParams.get("code") || hashParams.get("code");
+      const error = searchParams.get("error") || hashParams.get("error");
+      const errorDescription = searchParams.get("error_description") || hashParams.get("error_description");
+      const returnedState = searchParams.get("state") || hashParams.get("state");
+      
+      // Check for error in callback
+      if (error) {
+        console.error("Spotify auth error:", error, errorDescription);
+        show(`Spotify auth error: ${errorDescription || error}`);
+        sessionStorage.removeItem("rs_pkce_verifier");
+        sessionStorage.removeItem("rs_pkce_state");
+        sessionStorage.removeItem("rs_pkce_redirect");
+        sessionStorage.removeItem("rs_pkce_client");
+        // Clean URL - remove both query and hash
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return false;
+      }
+
       if (!code) return false;
+      
+      console.log("Spotify callback detected with code:", code ? "present" : "missing", "state:", returnedState ? "present" : "missing");
+      
       const storedState = sessionStorage.getItem("rs_pkce_state");
       const verifier = sessionStorage.getItem("rs_pkce_verifier");
       // Use stored redirect URI or fallback to auto-calculated one
-      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || `${window.location.origin}/mobile/callback.html`;
+      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || `${window.location.origin}/mobile/`;
       const clientId = sessionStorage.getItem("rs_pkce_client") || DEFAULT_CLIENT_ID;
-      if (!verifier || !storedState || storedState !== returnedState) {
+      
+      if (!verifier) {
+        console.error("Missing PKCE verifier in sessionStorage");
+        show("Auth session expired - please try again");
         return false;
       }
+      
+      if (!storedState || storedState !== returnedState) {
+        console.error("State mismatch:", { stored: storedState, returned: returnedState });
+        show("Auth state mismatch - possible security issue");
+        sessionStorage.removeItem("rs_pkce_verifier");
+        sessionStorage.removeItem("rs_pkce_state");
+        sessionStorage.removeItem("rs_pkce_redirect");
+        sessionStorage.removeItem("rs_pkce_client");
+        return false;
+      }
+      
       try {
         const body = new URLSearchParams({
           grant_type: "authorization_code",
@@ -3630,6 +3869,7 @@
           client_id: clientId,
           code_verifier: verifier,
         });
+        console.log("Exchanging Spotify code for token with redirect URI:", redirectUri);
         const res = await fetch("https://accounts.spotify.com/api/token", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -3637,8 +3877,16 @@
         });
         if (!res.ok) {
           const errorText = await res.text();
-          console.error("Spotify token exchange failed:", errorText);
-          throw new Error(errorText || "Token exchange failed");
+          console.error("Spotify token exchange failed:", res.status, errorText);
+          let errorMsg = "Token exchange failed";
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMsg = errorJson.error_description || errorJson.error || errorMsg;
+          } catch {
+            errorMsg = errorText || errorMsg;
+          }
+          show(`Spotify auth failed: ${errorMsg}. Check redirect URI matches dashboard.`);
+          throw new Error(errorMsg);
         }
         const data = await res.json();
         setSpotifyToken(data.access_token);
@@ -3647,12 +3895,19 @@
         sessionStorage.removeItem("rs_pkce_state");
         sessionStorage.removeItem("rs_pkce_redirect");
         sessionStorage.removeItem("rs_pkce_client");
-        window.history.replaceState({}, document.title, window.location.pathname);
+        // Clean URL - remove both query params and hash
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
         show("Spotify connected");
         return true;
       } catch (err) {
         console.error("Spotify callback failed", err);
-        show("Spotify auth failed - check redirect URI in Spotify dashboard");
+        const errorMsg = err.message || "Unknown error";
+        if (errorMsg.includes("redirect_uri")) {
+          show(`Redirect URI mismatch. Current: ${redirectUri}. Update Spotify app settings.`);
+        } else {
+          show(`Spotify auth failed: ${errorMsg}`);
+        }
         return false;
       }
     }
@@ -3671,20 +3926,30 @@
       }
       // Auto-calculate redirect URI - must match what's configured in SoundCloud app
       const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      
+      // Check if we're in local development
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || /^192\.168\./.test(window.location.hostname);
+      if (isLocal) {
+        const errorMsg = `SoundCloud doesn't allow local IPs (${window.location.hostname}). Use localhost or deploy to a public URL. Current redirect: ${redirectUri}`;
+        console.error(errorMsg);
+        show("SoundCloud auth requires localhost or public URL. Local IPs not allowed.");
+        return;
+      }
+      
       const authState = uid();
       sessionStorage.setItem("rs_sc_state", authState);
       try {
         const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(authState)}`;
+        console.log("Starting SoundCloud auth with redirect URI:", redirectUri);
         window.location.href = url;
       } catch (err) {
         console.error("SoundCloud auth failed", err);
-        show("Auth failed");
+        show("Auth failed: " + (err.message || "Unknown error"));
       }
     }
 
     async function handleSoundcloudCallback() {
       const hash = window.location.hash || "";
-      if (!hash.includes("access_token")) return false;
       const params = new URLSearchParams(hash.replace(/^#/, ""));
       const token = params.get("access_token");
       const error = params.get("error");
@@ -3694,18 +3959,28 @@
       
       if (error) {
         console.error("SoundCloud auth error:", error, errorDescription);
-        show(`SoundCloud auth failed: ${errorDescription || error}`);
+        let errorMsg = errorDescription || error || "Unknown error";
+        if (error === "redirect_uri_mismatch") {
+          errorMsg = `Redirect URI mismatch. Current: ${window.location.origin}${window.location.pathname}. Update SoundCloud app settings.`;
+        }
+        show(`SoundCloud auth failed: ${errorMsg}`);
         sessionStorage.removeItem("rs_sc_state");
         const cleanUrl = window.location.pathname + window.location.search;
         window.history.replaceState({}, document.title, cleanUrl);
         return false;
       }
       
+      if (!hash.includes("access_token")) return false;
+      
       if (storedState && returnedState && storedState !== returnedState) {
-        show("SoundCloud auth state mismatch");
+        console.error("State mismatch:", { stored: storedState, returned: returnedState });
+        show("SoundCloud auth state mismatch - possible security issue");
+        sessionStorage.removeItem("rs_sc_state");
         return false;
       }
+      
       if (!token) return false;
+      
       setSoundcloudToken(token);
       setSoundcloudConnected(true);
       sessionStorage.removeItem("rs_sc_state");
@@ -3807,7 +4082,10 @@
     );
 
     useEffect(() => {
-      document.documentElement.dataset.theme = theme;
+      if (theme) {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.setAttribute("data-theme", theme);
+      }
     }, [theme]);
 
     useEffect(() => {
@@ -3977,6 +4255,36 @@
 
       setTab("builder");
     };
+
+    // Show loading state while checking session
+    if (supabaseLoading) {
+      return html`<div className="shell" style=${{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style=${{ textAlign: "center", color: "var(--muted)" }}>
+          <div style=${{ fontSize: "16px" }}>Loading...</div>
+        </div>
+      </div>`;
+    }
+
+    // Show sign-in screen if not authenticated with Supabase (required)
+    if (!authedEmail) {
+      return html`<div className="shell" style=${{ minHeight: "100dvh" }}>
+        <${SignInScreen}
+          supabase=${supabase}
+          supabaseSession=${supabaseSession}
+          supabaseEmail=${supabaseEmail}
+          setSupabaseEmail=${setSupabaseEmail}
+          onSupabaseSignIn=${supabaseSignIn}
+          spotifyClientId=${spotifyClientId}
+          spotifyConnected=${spotifyConnected}
+          onSpotifyAuth=${startSpotifyAuth}
+          soundcloudClientId=${soundcloudClientId}
+          soundcloudConnected=${soundcloudConnected}
+          onSoundcloudAuth=${startSoundcloudAuth}
+          toast=${show}
+        />
+        <${Toast} toast=${toast} />
+      </div>`;
+    }
 
     const right = html`<button className="pill icon" onClick=${() => show("Settings (prototype)")} aria-label="Settings" type="button">
       <${Icon} name="spark" />
