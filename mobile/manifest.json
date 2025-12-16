@@ -1,0 +1,26 @@
+{
+  "name": "RADIO-LAB Mobile",
+  "short_name": "RADIO-LAB",
+  "description": "Minimal, arcade-styled web deck that stitches Spotify tracks with your own voice bumpers",
+  "start_url": "/mobile/",
+  "display": "standalone",
+  "background_color": "#0b0c10",
+  "theme_color": "#0b0c0f",
+  "orientation": "portrait",
+  "scope": "/mobile/",
+  "icons": [
+    {
+      "src": "/mobile/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/mobile/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

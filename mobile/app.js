@@ -15,6 +15,13 @@
   const PROFILE_HANDLE_KEY = "rs_profile_handle";
   const PROFILE_ZIP_KEY = "rs_profile_zip";
   const PROFILE_ZIP_OPTIN_KEY = "rs_profile_zip_optin";
+  const SPOTIFY_CLIENT_ID_KEY = "rs_spotify_client_id";
+  const SPOTIFY_TOKEN_KEY = "rs_spotify_token";
+  const SPOTIFY_REDIRECT_KEY = "rs_spotify_redirect";
+  const SOUNDCLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
+  const SOUNDCLOUD_TOKEN_KEY = "rs_sc_token";
+  const DEFAULT_CLIENT_ID = "0e01ffabf4404a23b1798c0e1c9b4762";
+  const SPOTIFY_SCOPES = "streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative user-read-private user-read-email";
 
   const ACCENTS = [
     { name: "Azure", value: "#0b84ff" },
@@ -49,6 +56,29 @@
     } catch {
       return fallback;
     }
+  }
+
+  function uid() {
+    return window.crypto?.randomUUID ? window.crypto.randomUUID() : String(Date.now() + Math.random());
+  }
+
+  function generateCodeVerifier() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return btoa(String.fromCharCode(...array))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+
+  async function generateCodeChallenge(verifier) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    const bytes = new Uint8Array(digest);
+    let str = "";
+    bytes.forEach((b) => (str += String.fromCharCode(b)));
+    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
   function useLocalStorageState(key, getDefault) {
@@ -367,7 +397,6 @@
 
       <div className="section">
         <div className="field">
-          <${Icon} name="search" />
           <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "saved" ? "Filter saved tracks…" : "Search tracks…"} />
           <button className="pill icon" onClick=${() => setQ("")} aria-label="Clear" type="button">
             <span style=${{ fontWeight: 700, opacity: 0.75 }}>×</span>
@@ -1505,12 +1534,11 @@
         />
       </div>
 
-	      <div className="section">
-	        <div className="field">
-	          <${Icon} name="search" />
-	          <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "inbox" ? "Filter not wired…" : "Search sessions…"} />
-	        </div>
-	      </div>
+      <div className="section">
+        <div className="field">
+          <input value=${q} onChange=${(e) => setQ(e.target.value)} placeholder=${mode === "inbox" ? "Filter not wired…" : "Search sessions…"} />
+        </div>
+      </div>
 
 		      ${mode === "live" &&
 		      html`<div className="section" style=${{ marginTop: "-8px" }}>
@@ -1720,6 +1748,18 @@
 	    following,
 	    followers,
 	    toggleFollow,
+	    spotifyClientId,
+	    setSpotifyClientId,
+	    spotifyRedirect,
+	    setSpotifyRedirect,
+	    spotifyConnected,
+	    onSpotifyAuth,
+	    onSpotifyDisconnect,
+	    soundcloudClientId,
+	    setSoundcloudClientId,
+	    soundcloudConnected,
+	    onSoundcloudAuth,
+	    onSoundcloudDisconnect,
 	  }) {
 	    const userId = supabaseSession?.user?.id || "";
 	    const [peopleQ, setPeopleQ] = useState("");
@@ -1805,16 +1845,13 @@
         <div className="card">
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
             <div className="field">
-              <${Icon} name="spark" />
               <input value=${supabaseUrl} onChange=${(e) => setSupabaseUrl(e.target.value)} placeholder="Supabase URL" />
             </div>
             <div className="field">
-              <${Icon} name="spark" />
               <input type="password" value=${supabaseAnon} onChange=${(e) => setSupabaseAnon(e.target.value)} placeholder="Supabase anon key" />
             </div>
             <div className="row">
               <div className="field grow">
-                <${Icon} name="user" />
                 <input value=${supabaseEmail} onChange=${(e) => setSupabaseEmail(e.target.value)} placeholder="you@example.com" />
               </div>
               ${authedEmail
@@ -1833,12 +1870,10 @@
         <div className="card">
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
             <div className="field">
-              <${Icon} name="user" />
               <input value=${profileHandle} onChange=${(e) => setProfileHandle(e.target.value)} placeholder="Handle (public)" />
             </div>
             <div className="row">
               <div className="field grow">
-                <${Icon} name="search" />
                 <input value=${zip} onChange=${(e) => setZip(e.target.value)} placeholder="Zip (used for Nearby)" />
               </div>
               <div className="chip">
@@ -1858,7 +1893,6 @@
 	        </div>
 	        <div className="card">
 	          <div className="field">
-	            <${Icon} name="search" />
 	            <input value=${peopleQ} onChange=${(e) => setPeopleQ(e.target.value)} placeholder="Search handles or names…" />
 	          </div>
 	          <div style=${{ height: "12px" }}></div>
@@ -1961,26 +1995,42 @@
 
       <div className="section">
         <div className="section-head">
-          <div className="section-title">Connected Services</div>
-          <div className="section-note">optional</div>
+          <div className="section-title">Spotify</div>
+          <div className="section-note">${spotifyConnected ? "connected" : "optional"}</div>
         </div>
-        <div className="list">
-          ${services.map(
-            (svc) => html`<div className="item">
-              <div className="thumb"></div>
-              <div className="grow meta">
-                <div className="t">${svc.name}</div>
-                <div className="s">${svc.connected ? "Connected" : "Not connected"}</div>
-              </div>
-              <button
-                className=${cx("pill", svc.connected ? "danger" : "primary")}
-                onClick=${() => toast(`${svc.connected ? "Disconnect" : "Connect"} (prototype)`)}
-                type="button"
-              >
-                ${svc.connected ? "Disconnect" : "Connect"}
-              </button>
-            </div>`
-          )}
+        <div className="card">
+          <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
+            <div className="field">
+              <input value=${spotifyClientId} onChange=${(e) => setSpotifyClientId(e.target.value)} placeholder="Client ID (PKCE)" />
+            </div>
+            <div className="field">
+              <input value=${spotifyRedirect} onChange=${(e) => setSpotifyRedirect(e.target.value)} placeholder="Redirect URI" />
+            </div>
+            <div className="row">
+              ${spotifyConnected
+                ? html`<button className="pill danger" onClick=${onSpotifyDisconnect} type="button">Disconnect</button>`
+                : html`<button className="pill primary" onClick=${onSpotifyAuth} type="button">Authorize with Spotify</button>`}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head">
+          <div className="section-title">SoundCloud</div>
+          <div className="section-note">${soundcloudConnected ? "connected" : "optional"}</div>
+        </div>
+        <div className="card">
+          <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
+            <div className="field">
+              <input value=${soundcloudClientId} onChange=${(e) => setSoundcloudClientId(e.target.value)} placeholder="Client ID" />
+            </div>
+            <div className="row">
+              ${soundcloudConnected
+                ? html`<button className="pill danger" onClick=${onSoundcloudDisconnect} type="button">Disconnect</button>`
+                : html`<button className="pill primary" onClick=${onSoundcloudAuth} type="button">Authorize SoundCloud</button>`}
+            </div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -1996,6 +2046,15 @@
     const [supabaseAnon, setSupabaseAnon] = useLocalStorageString(SUPABASE_ANON_KEY, "");
     const { client: supabase, session: supabaseSession, authHeaders } = useSupabase(supabaseUrl, supabaseAnon);
     const [supabaseEmail, setSupabaseEmail] = useState("");
+
+    const [spotifyClientId, setSpotifyClientId] = useLocalStorageString(SPOTIFY_CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
+    const [spotifyToken, setSpotifyToken] = useLocalStorageString(SPOTIFY_TOKEN_KEY, "");
+    const [spotifyRedirect, setSpotifyRedirect] = useLocalStorageString(SPOTIFY_REDIRECT_KEY, "");
+    const [spotifyConnected, setSpotifyConnected] = useState(!!spotifyToken);
+
+    const [soundcloudClientId, setSoundcloudClientId] = useLocalStorageString(SOUNDCLOUD_CLIENT_ID_KEY, "");
+    const [soundcloudToken, setSoundcloudToken] = useLocalStorageString(SOUNDCLOUD_TOKEN_KEY, "");
+    const [soundcloudConnected, setSoundcloudConnected] = useState(!!soundcloudToken);
 
     const [profileHandle, setProfileHandle] = useLocalStorageString(PROFILE_HANDLE_KEY, "");
     const [zip, setZip] = useLocalStorageString(PROFILE_ZIP_KEY, "");
@@ -2189,6 +2248,124 @@
       }
     }
 
+    async function startSpotifyAuth() {
+      const clientId = spotifyClientId || DEFAULT_CLIENT_ID;
+      const redirectUri = spotifyRedirect || `${window.location.origin}/mobile/callback.html`;
+      if (!clientId) {
+        show("Add Spotify Client ID");
+        return;
+      }
+      setSpotifyRedirect(redirectUri);
+      try {
+        const verifier = generateCodeVerifier();
+        const challenge = await generateCodeChallenge(verifier);
+        const authState = uid();
+        sessionStorage.setItem("rs_pkce_verifier", verifier);
+        sessionStorage.setItem("rs_pkce_state", authState);
+        sessionStorage.setItem("rs_pkce_redirect", redirectUri);
+        sessionStorage.setItem("rs_pkce_client", clientId);
+        const scopes = encodeURIComponent(SPOTIFY_SCOPES);
+        const redirect = encodeURIComponent(redirectUri);
+        const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${clientId}&scope=${scopes}&redirect_uri=${redirect}&code_challenge_method=S256&code_challenge=${challenge}&state=${authState}&show_dialog=true`;
+        window.location.href = url;
+      } catch (err) {
+        console.error("Spotify auth failed", err);
+        show("Auth failed");
+      }
+    }
+
+    async function handleSpotifyCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const returnedState = params.get("state");
+      if (!code) return false;
+      const storedState = sessionStorage.getItem("rs_pkce_state");
+      const verifier = sessionStorage.getItem("rs_pkce_verifier");
+      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || "";
+      const clientId = sessionStorage.getItem("rs_pkce_client") || DEFAULT_CLIENT_ID;
+      if (!verifier || !storedState || storedState !== returnedState) {
+        return false;
+      }
+      try {
+        const body = new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+          client_id: clientId,
+          code_verifier: verifier,
+        });
+        const res = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (!res.ok) throw new Error("Token exchange failed");
+        const data = await res.json();
+        setSpotifyToken(data.access_token);
+        setSpotifyConnected(true);
+        sessionStorage.removeItem("rs_pkce_verifier");
+        sessionStorage.removeItem("rs_pkce_state");
+        sessionStorage.removeItem("rs_pkce_redirect");
+        sessionStorage.removeItem("rs_pkce_client");
+        window.history.replaceState({}, document.title, window.location.pathname);
+        show("Spotify connected");
+        return true;
+      } catch (err) {
+        console.error("Spotify callback failed", err);
+        return false;
+      }
+    }
+
+    function disconnectSpotify() {
+      setSpotifyToken("");
+      setSpotifyConnected(false);
+      show("Spotify disconnected");
+    }
+
+    async function startSoundcloudAuth() {
+      const clientId = soundcloudClientId;
+      if (!clientId) {
+        show("Add SoundCloud Client ID");
+        return;
+      }
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      const authState = uid();
+      sessionStorage.setItem("rs_sc_state", authState);
+      const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(authState)}`;
+      window.location.href = url;
+    }
+
+    async function handleSoundcloudCallback() {
+      const hash = window.location.hash || "";
+      if (!hash.includes("access_token")) return false;
+      const params = new URLSearchParams(hash.replace(/^#/, ""));
+      const token = params.get("access_token");
+      const returnedState = params.get("state");
+      const storedState = sessionStorage.getItem("rs_sc_state");
+      if (storedState && returnedState && storedState !== returnedState) {
+        return false;
+      }
+      if (!token) return false;
+      setSoundcloudToken(token);
+      setSoundcloudConnected(true);
+      sessionStorage.removeItem("rs_sc_state");
+      const cleanUrl = window.location.pathname + window.location.search;
+      window.history.replaceState({}, document.title, cleanUrl);
+      show("SoundCloud connected");
+      return true;
+    }
+
+    function disconnectSoundcloud() {
+      setSoundcloudToken("");
+      setSoundcloudConnected(false);
+      show("SoundCloud disconnected");
+    }
+
+    useEffect(() => {
+      handleSpotifyCallback().catch(() => {});
+      handleSoundcloudCallback().catch(() => {});
+    }, []);
+
     async function saveProfile() {
       if (!supabase || !authedUserId) {
         show("Sign in to save");
@@ -2252,11 +2429,11 @@
 
     const services = useMemo(
       () => [
-        { name: "Spotify", connected: true },
+        { name: "Spotify", connected: spotifyConnected },
         { name: "Apple Music", connected: false },
-        { name: "SoundCloud", connected: false },
+        { name: "SoundCloud", connected: soundcloudConnected },
       ],
-      []
+      [spotifyConnected, soundcloudConnected]
     );
 
     useEffect(() => {
@@ -2510,6 +2687,18 @@
 	            following=${following}
 	            followers=${followers}
 	            toggleFollow=${toggleFollow}
+	            spotifyClientId=${spotifyClientId}
+	            setSpotifyClientId=${setSpotifyClientId}
+	            spotifyRedirect=${spotifyRedirect}
+	            setSpotifyRedirect=${setSpotifyRedirect}
+	            spotifyConnected=${spotifyConnected}
+	            onSpotifyAuth=${startSpotifyAuth}
+	            onSpotifyDisconnect=${disconnectSpotify}
+	            soundcloudClientId=${soundcloudClientId}
+	            setSoundcloudClientId=${setSoundcloudClientId}
+	            soundcloudConnected=${soundcloudConnected}
+	            onSoundcloudAuth=${startSoundcloudAuth}
+	            onSoundcloudDisconnect=${disconnectSoundcloud}
 	          />`;
 
     return html`<div className="shell">
@@ -2522,4 +2711,18 @@
 
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(html`<${App} />`);
+
+  // Register Service Worker for PWA
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("/mobile/sw.js")
+        .then((registration) => {
+          console.log("Service Worker registered:", registration.scope);
+        })
+        .catch((error) => {
+          console.log("Service Worker registration failed:", error);
+        });
+    });
+  }
 })();

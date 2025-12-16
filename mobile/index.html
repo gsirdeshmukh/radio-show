@@ -6,16 +6,20 @@
     <title>RADIO-LAB Mobile</title>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RADIO-LAB" />
     <meta name="theme-color" content="#0b0c0f" />
+    <link rel="manifest" href="./manifest.json" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://*.supabase.net wss://*.supabase.co wss://*.supabase.net stun: turn:; font-src 'self'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://*.supabase.net https://accounts.spotify.com https://api.spotify.com https://soundcloud.com https://api-v2.soundcloud.com wss://*.supabase.co wss://*.supabase.net stun: turn:; font-src 'self'; base-uri 'self'; form-action 'self'"
     />
     <link rel="stylesheet" href="./mobile.css" />
     <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Capacitor Core -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@capacitor/core@5/dist/capacitor.js"></script>
   </head>
   <body>
     <div id="root"></div>
