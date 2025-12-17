@@ -543,7 +543,7 @@
   }
 
   function applySavedTheme() {
-    const theme = sessionStorage.getItem("rs_theme") || "default";
+    const theme = sessionStorage.getItem("rs_theme") || "frost";
     applyTheme(theme);
   }
 
@@ -557,9 +557,9 @@
   }
 
   function applySavedFont() {
-    const storedColors = restoreFontSwatches();
-    const fontColor = sessionStorage.getItem("rs_font_choice") || storedColors.aqua || "#6af5c8";
-    applyFont("custom", fontColor);
+    restoreFontSwatches();
+    const stored = sessionStorage.getItem("rs_font_choice");
+    applyFont(stored ? "custom" : "default", stored || undefined);
   }
 
   function applyTheme(theme) {
@@ -569,7 +569,7 @@
       ember: { accent: "#ff6b3d", accent2: "#fbb13c", panel: "#1c1410", panelStrong: "#281a14", bg: "#0d0907", text: "#ffe8d9", muted: "#ffb48f", grid: "rgba(255,255,255,0.08)" },
       sunset: { accent: "#ff8fb1", accent2: "#ff6b6b", panel: "#1d1520", panelStrong: "#251a29", bg: "#100a11", text: "#ffe8f0", muted: "#f4a4c6", grid: "rgba(255,255,255,0.08)" },
       violet: { accent: "#b388ff", accent2: "#6c63ff", panel: "#141328", panelStrong: "#1c1b35", bg: "#0b0a18", text: "#ebe6ff", muted: "#c1b8ff", grid: "rgba(255,255,255,0.08)" },
-      frost: { accent: "#ffffff", accent2: "#d5e7ff", panel: "#f5f6f8", panelStrong: "#eef2f5", bg: "#ffffff", text: "#0c1524", muted: "#586b85", grid: "rgba(12,21,36,0.12)" },
+      frost: { accent: "#0b84ff", accent2: "#af52de", panel: "#f5f6f8", panelStrong: "#eef2f5", bg: "#ffffff", text: "#0f172a", muted: "#5b6b82", grid: "rgba(15,23,42,0.12)" },
     };
     const t = themes[theme] || themes.default;
     root.style.setProperty("--accent", t.accent);
@@ -584,19 +584,21 @@
 
   function applyFont(font, overrideColor) {
     const root = document.documentElement;
-    const defaultFonts = { body: '"Space Grotesk", "Inter", system-ui, -apple-system, sans-serif', heading: '"Press Start 2P", "Space Grotesk", sans-serif' };
+    const mono = '"Menlo", ui-monospace, "SFMono-Regular", "Monaco", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", "Courier New", monospace';
     const palettes = {
       aqua: { text: "#6af5c8" },
       amber: { text: "#ffb347" },
       rose: { text: "#ff8fb1" },
       iris: { text: "#b388ff" },
     };
-    const color = overrideColor || palettes[font]?.text || palettes.aqua.text;
-    const muted = lightenColor(color, 0.35);
-    root.style.setProperty("--text", color);
-    root.style.setProperty("--muted", muted);
-    root.style.setProperty("--font-body", defaultFonts.body);
-    root.style.setProperty("--font-heading", defaultFonts.heading);
+    root.style.setProperty("--font-body", mono);
+    root.style.setProperty("--font-heading", mono);
+
+    const color = overrideColor || palettes[font]?.text;
+    if (color) {
+      root.style.setProperty("--accent", color);
+      root.style.setProperty("--accent-2", shadeColor(color, -0.18));
+    }
   }
 
   function handleFontColorInput(e) {
