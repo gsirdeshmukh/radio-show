@@ -976,6 +976,44 @@
     return track._resolvedStream;
   }
 
+  async function ensureSoundcloudStreamForSegment(segment) {
+    if (!segment || segment.type !== "soundcloud") return true;
+    const clientId = getSoundcloudClientId();
+    if (!clientId) {
+      showError("SoundCloud client ID missing. Add it in Auth Panel.");
+      return false;
+    }
+    try {
+      let transcodingUrl = segment.transcodingUrl || "";
+      if (!transcodingUrl && segment.soundcloudId) {
+        const track = await scFetch(
+          `https://api-v2.soundcloud.com/tracks/${segment.soundcloudId}?client_id=${clientId}`
+        );
+        const transcoding = pickSoundcloudTranscoding(track?.media?.transcodings || []);
+        transcodingUrl = transcoding?.url || "";
+        segment.transcodingUrl = transcodingUrl;
+      }
+      if (!transcodingUrl) {
+        showError("SoundCloud track is not streamable.");
+        return false;
+      }
+      const data = await scFetch(`${transcodingUrl}?client_id=${clientId}`);
+      const streamUrl = data?.url || "";
+      if (!streamUrl) {
+        showError("SoundCloud stream unavailable.");
+        return false;
+      }
+      segment.clientId = clientId;
+      segment.streamUrl = streamUrl;
+      segment.url = streamUrl;
+      return true;
+    } catch (err) {
+      console.warn("SoundCloud resolve failed", err);
+      showError("SoundCloud playback failed.");
+      return false;
+    }
+  }
+
   async function scFetch(url) {
     const tryFetch = async (target) => {
       const res = await fetch(target);
@@ -5221,6 +5259,10 @@
     stopPreview();
     state.previewSegmentId = segment.id;
     const length = getSegmentLength(segment);
+    if (segment.type === "soundcloud") {
+      const ok = await ensureSoundcloudStreamForSegment(segment);
+      if (!ok) return;
+    }
     if (segment.type === "voice" || segment.type === "upload" || segment.type === "soundcloud") {
       const audio = new Audio(segment.url);
       audio.crossOrigin = "anonymous";
@@ -5262,6 +5304,13 @@
     const totalLength = getSegmentLength(segment);
     const playLength = Math.max(0, totalLength - offsetMs);
     startListenProgress(playLength);
+    if (segment.type === "soundcloud") {
+      const ok = await ensureSoundcloudStreamForSegment(segment);
+      if (!ok) {
+        stopShow();
+        return;
+      }
+    }
     if (segment.type === "voice" || segment.type === "upload" || segment.type === "soundcloud") {
       await playVoiceSegment(segment, offsetMs, playLength);
     } else {
