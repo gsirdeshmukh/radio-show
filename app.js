@@ -7,6 +7,7 @@
   const APPLE_DEVELOPER_TOKEN = "APPLE_DEV_TOKEN_PLACEHOLDER"; // Replace with your Apple Music JWT
   const APPLE_TEST_TRACK = "900032829"; // Replace with a real catalog track ID
   const SOUND_CLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
+  const DEFAULT_SOUNDCLOUD_CLIENT_ID = "a281953d7fedd08d1a49c517fdbeba2c";
   const SOUND_CLOUD_TOKEN_KEY = "rs_sc_token";
   const REQUIRED_SCOPES = [
     "streaming",
@@ -692,10 +693,24 @@
   function hydrateSoundcloudClientId() {
     if (!dom.scClientIdInput) return;
     const stored = localStorage.getItem(SOUND_CLOUD_CLIENT_ID_KEY) || "";
-    if (!dom.scClientIdInput.value) {
-      dom.scClientIdInput.value = stored;
+    const isLocal =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      /^192\.168\./.test(window.location.hostname);
+    const field = dom.scClientIdInput.closest(".field");
+    if (!isLocal && field) {
+      field.style.display = "none";
+      dom.scClientIdInput.dataset.hidden = "true";
+      state.soundcloud.clientId = (stored || DEFAULT_SOUNDCLOUD_CLIENT_ID).trim();
+      if (state.soundcloud.clientId) {
+        localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, state.soundcloud.clientId);
+      }
+      return;
     }
-    state.soundcloud.clientId = (dom.scClientIdInput.value || stored || "").trim();
+    if (!dom.scClientIdInput.value) {
+      dom.scClientIdInput.value = stored || DEFAULT_SOUNDCLOUD_CLIENT_ID;
+    }
+    state.soundcloud.clientId = (dom.scClientIdInput.value || stored || DEFAULT_SOUNDCLOUD_CLIENT_ID || "").trim();
     dom.scClientIdInput.addEventListener("change", () => {
       state.soundcloud.clientId = (dom.scClientIdInput.value || "").trim();
       localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, state.soundcloud.clientId);
@@ -703,10 +718,12 @@
   }
 
   function getSoundcloudClientId() {
-    const val = (dom.scClientIdInput?.value || state.soundcloud.clientId || "").trim();
-    state.soundcloud.clientId = val;
-    if (val) localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, val);
-    return val;
+    const inputHidden = dom.scClientIdInput?.dataset.hidden === "true";
+    const val = (inputHidden ? "" : dom.scClientIdInput?.value || "") || state.soundcloud.clientId || "";
+    const trimmed = val.trim();
+    state.soundcloud.clientId = trimmed || state.soundcloud.clientId;
+    if (state.soundcloud.clientId) localStorage.setItem(SOUND_CLOUD_CLIENT_ID_KEY, state.soundcloud.clientId);
+    return state.soundcloud.clientId || "";
   }
 
   function clearSoundcloudToken(reason) {
