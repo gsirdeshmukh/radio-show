@@ -5285,7 +5285,19 @@
     if (segment.type === "voice" || segment.type === "upload" || segment.type === "soundcloud") {
       const audio = new Audio(segment.url);
       audio.crossOrigin = "anonymous";
-      audio.currentTime = (startOverrideMs ?? segment.startMs ?? 0) / 1000;
+      const desiredStart = (startOverrideMs ?? segment.startMs ?? 0) / 1000;
+      audio.preload = "metadata";
+      const seek = () => {
+        if (!Number.isFinite(desiredStart) || desiredStart <= 0) return;
+        try {
+          audio.currentTime = desiredStart;
+        } catch (err) {
+          // ignore seek failures until metadata is ready
+        }
+      };
+      audio.addEventListener("loadedmetadata", seek, { once: true });
+      audio.addEventListener("canplay", seek, { once: true });
+      seek();
       audio.volume = segment.volume ?? state.masterVolume;
       state.previewAudio = audio;
       audio.play();
@@ -5349,6 +5361,7 @@
     }
     const audio = new Audio(audioUrl);
     audio.crossOrigin = "anonymous";
+    audio.preload = "metadata";
     const source = ctx.createMediaElementSource(audio);
     const gain = ctx.createGain();
     const vol = segment.volume ?? state.masterVolume;
@@ -5359,6 +5372,7 @@
     const startMs = (segment.startMs ?? 0) + offsetMs;
     const playMs = playMsOverride ?? getSegmentLength(segment) - offsetMs;
     const playSeconds = Math.max(0, playMs) / 1000;
+    const desiredStart = Math.max(0, startMs / 1000);
 
     if (segment.fadeIn) {
       gain.gain.setValueAtTime(0.001, ctx.currentTime);
@@ -5380,10 +5394,20 @@
         state.activeAudio = null;
         resolve();
       };
+      const seek = () => {
+        if (desiredStart <= 0) return;
+        try {
+          audio.currentTime = Math.min(audio.duration || desiredStart, desiredStart);
+        } catch (err) {
+          // ignore until metadata is ready
+        }
+      };
+      audio.addEventListener("loadedmetadata", seek, { once: true });
+      audio.addEventListener("canplay", seek, { once: true });
       audio.addEventListener(
         "play",
         () => {
-          audio.currentTime = Math.min(audio.duration || 0, startMs / 1000);
+          seek();
           stopTimer = setTimeout(() => {
             audio.pause();
             audio.dispatchEvent(new Event("ended"));
