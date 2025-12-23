@@ -104,6 +104,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
 }
 
 .hero-profile {
@@ -232,7 +233,7 @@ p {
 }
 
 .top-sessions .list {
-  max-height: 300px;
+  max-height: 210px;
 }
 
 .switch-group {
@@ -1315,4 +1316,10 @@ textarea:focus-visible {
 
 #load-input {
   display: none;
+}
+.hero-profile-chip {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  min-width: 180px;
 }
