@@ -127,7 +127,6 @@ p {
   flex-direction: column;
   gap: 8px;
   position: relative;
-  padding-right: 180px;
 }
 
 .hero-main {
@@ -144,6 +143,13 @@ p {
   gap: 8px;
 }
 
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .hero-profile {
   display: flex;
   flex-direction: column;
@@ -154,7 +160,6 @@ p {
   border: 1px solid var(--grid);
   max-width: 260px;
   align-self: flex-start;
-  justify-self: end;
 }
 
 .profile-controls {
@@ -237,7 +242,6 @@ p {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-height: 100%;
 }
 
 .panel-head.compact {
@@ -896,6 +900,9 @@ textarea:focus-visible {
   flex-direction: column;
   min-height: 520px;
 }
+.panel.sessions.top-sessions {
+  min-height: auto;
+}
 .panel.recorder {
   grid-area: recorder;
   position: sticky;
@@ -925,20 +932,20 @@ textarea:focus-visible {
   gap: 8px;
 }
 .panel.sessions .list li {
-  padding: 8px 10px;
+  padding: 6px 8px;
   gap: 8px;
 }
 .panel.sessions .list .meta {
-  gap: 2px;
+  gap: 1px;
 }
 .panel.sessions .list .title {
-  font-size: 13px;
+  font-size: 12px;
 }
 .panel.sessions .list .subtitle {
-  font-size: 11px;
+  font-size: 10px;
 }
 .panel.sessions .list .actions {
-  gap: 6px;
+  gap: 4px;
 }
 .panel.sessions .row.wrap {
   gap: 6px;
@@ -1402,8 +1409,5 @@ textarea:focus-visible {
   display: none;
 }
 .hero-profile-chip {
-  position: absolute;
-  top: 14px;
-  right: 14px;
   min-width: 180px;
 }
