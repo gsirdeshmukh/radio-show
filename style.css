@@ -105,6 +105,7 @@ p {
   flex-direction: column;
   gap: 10px;
   position: relative;
+  padding-right: 220px;
 }
 
 .hero-profile {
@@ -1285,6 +1286,9 @@ textarea:focus-visible {
   }
   .top-sessions {
     grid-column: span 2;
+  }
+  .hero-card {
+    padding-right: 20px;
   }
   .workspace {
     grid-template-columns: 1fr;
