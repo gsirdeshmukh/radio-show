@@ -449,7 +449,7 @@ p {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 20px;
   align-items: start;
 }
@@ -457,15 +457,15 @@ p {
 /* Desktop: prioritize the Build (Show Builder) panel */
 @media (min-width: 1201px) {
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: 320px 1fr;
   }
   .workspace .panel.show {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
   }
   .workspace .panel.recorder {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 1;
   }
 }
 
@@ -857,6 +857,20 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 520px;
+}
+.panel.recorder {
+  position: sticky;
+  top: 20px;
+}
+.panel.recorder .preview {
+  max-height: 140px;
+  overflow-y: auto;
+}
+.panel.recorder .order-list {
+  max-height: 140px;
+}
+.panel.recorder .row.wrap {
+  gap: 8px;
 }
 .panel.show {
   min-height: 520px;
