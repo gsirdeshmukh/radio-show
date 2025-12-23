@@ -24,6 +24,41 @@
         <div class="status-chip" id="spotify-status">spotify: disconnected</div>
         <div id="ticker" class="ticker"><span>now playing: —</span></div>
       </div>
+      <div class="hero-profile">
+        <div class="profile-chip" id="profile-chip" title="Linked Spotify account">
+          <div class="profile-avatar" id="profile-avatar"></div>
+          <div class="profile-name" id="profile-name">Not linked</div>
+        </div>
+        <div class="profile-controls">
+          <div class="switch-group">
+            <span class="switch-label">theme</span>
+            <div class="theme-switch" id="theme-switch">
+              <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
+              <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
+              <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
+              <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
+              <button class="theme-dot" data-theme="frost" title="Frost">◼</button>
+            </div>
+          </div>
+          <div class="switch-group">
+            <span class="switch-label">mode</span>
+            <button class="ghost small" id="mode-toggle" type="button">Light Mode</button>
+          </div>
+          <div class="switch-group">
+            <span class="switch-label">font</span>
+            <div class="font-switch" id="font-switch">
+              <button class="font-dot" data-font="aqua" data-color="#6af5c8" title="Aqua text"></button>
+              <button class="font-dot" data-font="amber" data-color="#ffb347" title="Amber text"></button>
+              <button class="font-dot" data-font="rose" data-color="#ff8fb1" title="Rose text"></button>
+            </div>
+            <div class="font-custom" id="font-custom">
+              <input type="color" data-target="aqua" value="#6af5c8" aria-label="Choose custom font color 1" />
+              <input type="color" data-target="amber" value="#ffb347" aria-label="Choose custom font color 2" />
+              <input type="color" data-target="rose" value="#ff8fb1" aria-label="Choose custom font color 3" />
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="top-actions">
         <button id="connect-toggle" class="ghost small">Auth Panel</button>
       </div>
@@ -55,39 +90,30 @@
       <ul id="sc-results" class="list compact-list"></ul>
     </section>
 
-    <div class="profile-stack">
-      <div class="profile-chip" id="profile-chip" title="Linked Spotify account">
-        <div class="profile-avatar" id="profile-avatar"></div>
-        <div class="profile-name" id="profile-name">Not linked</div>
+    <section class="panel sessions top-sessions" id="sessions-panel">
+      <div class="panel-head">
+        <h2>Sessions</h2>
+        <span class="hint" id="sessions-status">—</span>
       </div>
-      <div class="switch-group">
-        <span class="switch-label">theme</span>
-        <div class="theme-switch" id="theme-switch">
-          <button class="theme-dot" data-theme="default" title="Aqua">◼</button>
-          <button class="theme-dot" data-theme="ember" title="Ember">◼</button>
-          <button class="theme-dot" data-theme="sunset" title="Sunset">◼</button>
-          <button class="theme-dot" data-theme="violet" title="Violet">◼</button>
-          <button class="theme-dot" data-theme="frost" title="Frost">◼</button>
-        </div>
+      <div class="row wrap">
+        <input id="sessions-search" type="text" placeholder="Search sessions" />
+	        <select id="sessions-feed">
+	          <option value="public">Public</option>
+	          <option value="following">Following</option>
+	          <option value="friends">Friends</option>
+	          <option value="nearby">Nearby</option>
+	          <option value="inbox">Inbox</option>
+	        </select>
+        <select id="sessions-sort">
+          <option value="new">Newest</option>
+          <option value="plays">Most plays</option>
+          <option value="downloads">Most downloads</option>
+          <option value="likes">Most likes</option>
+        </select>
+        <button id="sessions-refresh" class="ghost small">Refresh</button>
       </div>
-      <div class="switch-group">
-        <span class="switch-label">mode</span>
-        <button class="ghost small" id="mode-toggle" type="button">Light Mode</button>
-      </div>
-      <div class="switch-group">
-        <span class="switch-label">font</span>
-        <div class="font-switch" id="font-switch">
-          <button class="font-dot" data-font="aqua" data-color="#6af5c8" title="Aqua text"></button>
-          <button class="font-dot" data-font="amber" data-color="#ffb347" title="Amber text"></button>
-          <button class="font-dot" data-font="rose" data-color="#ff8fb1" title="Rose text"></button>
-        </div>
-        <div class="font-custom" id="font-custom">
-          <input type="color" data-target="aqua" value="#6af5c8" aria-label="Choose custom font color 1" />
-          <input type="color" data-target="amber" value="#ffb347" aria-label="Choose custom font color 2" />
-          <input type="color" data-target="rose" value="#ff8fb1" aria-label="Choose custom font color 3" />
-        </div>
-      </div>
-    </div>
+      <ul id="sessions-list" class="list"></ul>
+    </section>
   </header>
 
   <section class="panel connect floating collapsed" id="connect-panel">
@@ -189,31 +215,6 @@
 	  </section>
 
   <main class="workspace">
-    <section class="panel sessions" id="sessions-panel">
-      <div class="panel-head">
-        <h2>Sessions</h2>
-        <span class="hint" id="sessions-status">—</span>
-      </div>
-      <div class="row wrap">
-        <input id="sessions-search" type="text" placeholder="Search sessions" />
-	        <select id="sessions-feed">
-	          <option value="public">Public</option>
-	          <option value="following">Following</option>
-	          <option value="friends">Friends</option>
-	          <option value="nearby">Nearby</option>
-	          <option value="inbox">Inbox</option>
-	        </select>
-        <select id="sessions-sort">
-          <option value="new">Newest</option>
-          <option value="plays">Most plays</option>
-          <option value="downloads">Most downloads</option>
-          <option value="likes">Most likes</option>
-        </select>
-        <button id="sessions-refresh" class="ghost small">Refresh</button>
-      </div>
-      <ul id="sessions-list" class="list"></ul>
-    </section>
-
     <section class="panel recorder">
       <div class="panel-head">
         <h2>Voice Bites</h2>

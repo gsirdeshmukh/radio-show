@@ -4683,6 +4683,12 @@
         document.querySelectorAll(".segments li").forEach((el) => el.classList.remove("focused"));
         li.classList.add("focused");
       });
+      const art = document.createElement("div");
+      art.className = "segment-art";
+      const artUrl = segment.album?.images?.[0]?.url || "";
+      if (artUrl) {
+        art.style.backgroundImage = `url(${artUrl})`;
+      }
       const meta = document.createElement("div");
       meta.className = "meta";
       const title = document.createElement("div");
@@ -4995,6 +5001,7 @@
       moves.appendChild(talk);
       moves.appendChild(remove);
 
+      li.appendChild(art);
       li.appendChild(meta);
       li.appendChild(controls);
       li.appendChild(moves);
