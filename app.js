@@ -775,7 +775,7 @@
       alert("Add your SoundCloud client ID in Auth Panel.");
       return;
     }
-    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const redirectUri = DEFAULT_REDIRECT;
     const authState = uid();
     sessionStorage.setItem("rs_sc_state", authState);
     const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(
