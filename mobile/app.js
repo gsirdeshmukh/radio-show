@@ -8,6 +8,8 @@
     recent: "rs_mobile_recent_sessions",
     likes: "rs_liked_sessions",
     builder: "rs_mobile_builder_segments",
+    spotifyProfile: "rs_spotify_profile",
+    soundcloudProfile: "rs_sc_profile",
   };
 
   const SUPABASE_URL_KEY = "rs_supabase_url";
@@ -24,7 +26,7 @@
   const DEFAULT_SOUNDCLOUD_CLIENT_ID = "a281953d7fedd08d1a49c517fdbeba2c"; // Public SoundCloud client ID for default access
   const DEFAULT_SUPABASE_URL = "https://jduyihzjqpcczekhorrq.supabase.co";
   const DEFAULT_SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
-  const SPOTIFY_SCOPES = "streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative user-read-private user-read-email";
+  const SPOTIFY_SCOPES = "streaming user-modify-playback-state user-read-playback-state user-library-read playlist-read-private playlist-read-collaborative user-read-private user-read-email app-remote-control";
 
   const ACCENTS = [
     { name: "Azure", value: "#0b84ff" },
@@ -318,24 +320,18 @@
     </div>`;
   }
 
-  function SignInScreen({
-    supabase,
-    supabaseSession,
-    supabaseEmail,
-    setSupabaseEmail,
-    onSupabaseSignIn,
+  function ConnectScreen({
     spotifyClientId,
     spotifyConnected,
     onSpotifyAuth,
     soundcloudClientId,
     soundcloudConnected,
     onSoundcloudAuth,
-    toast,
+    onContinue,
   }) {
-    const authedEmail = supabaseSession?.user?.email || "";
-    const isSupabaseConnected = !!authedEmail;
     const isSpotifyConnected = !!spotifyConnected;
     const isSoundcloudConnected = !!soundcloudConnected;
+    const canContinue = isSpotifyConnected;
 
     return html`<div style=${{ 
       minHeight: "100dvh", 
@@ -346,7 +342,7 @@
       padding: "var(--pad)",
       textAlign: "center"
     }}>
-      <div style=${{ marginBottom: "80px" }}>
+      <div style=${{ marginBottom: "60px" }}>
         <h1 style=${{ 
           fontSize: "32px", 
           fontWeight: 700, 
@@ -355,122 +351,62 @@
           color: "var(--text)"
         }}>Radio Lab</h1>
         <div style=${{ 
-          fontSize: "18px", 
+          fontSize: "16px", 
           color: "var(--muted)",
-          textTransform: "lowercase",
           letterSpacing: "0.01em"
-        }}>sign in</div>
+        }}>connect your music</div>
       </div>
 
       <div style=${{ width: "100%", maxWidth: "320px", display: "flex", flexDirection: "column", gap: "12px" }}>
         <div className="card" style=${{ padding: "20px" }}>
-          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>Services</div>
-          
-          <div style=${{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style=${{ flex: 1, textAlign: "left" }}>
-                <div style=${{ fontSize: "15px", fontWeight: 600 }}>Supabase</div>
-                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSupabaseConnected ? authedEmail : "Required for app features"}</div>
-              </div>
-              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
-                ${isSupabaseConnected 
-                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
-                  : html`<div className="chip">Not connected</div>`}
-              </div>
+          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>Spotify (required)</div>
+          <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div style=${{ flex: 1, textAlign: "left" }}>
+              <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSpotifyConnected ? "Connected" : spotifyClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
             </div>
-
-            ${!isSupabaseConnected && html`
-              <div style=${{ marginTop: "8px" }}>
-                <div className="field">
-                  <input 
-                    value=${supabaseEmail} 
-                    onChange=${(e) => setSupabaseEmail(e.target.value)} 
-                    placeholder="you@example.com"
-                    type="email"
-                  />
-                </div>
-                <button 
-                  className="pill primary" 
-                  onClick=${onSupabaseSignIn} 
-                  type="button"
-                  style=${{ width: "100%", marginTop: "8px" }}
-                  disabled=${!supabaseEmail.trim()}
-                >
-                  Sign in with Email
-                </button>
-              </div>
-            `}
+            <div className="chip">${isSpotifyConnected ? "Connected" : "Not connected"}</div>
           </div>
+          ${!isSpotifyConnected && spotifyClientId && html`
+            <button 
+              className="pill primary" 
+              onClick=${onSpotifyAuth} 
+              type="button"
+              style=${{ width: "100%", marginTop: "12px" }}
+            >
+              Connect Spotify
+            </button>
+          `}
         </div>
 
         <div className="card" style=${{ padding: "20px" }}>
-          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>Music Services</div>
-          
-          <div style=${{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style=${{ flex: 1, textAlign: "left" }}>
-                <div style=${{ fontSize: "15px", fontWeight: 600 }}>Spotify</div>
-                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSpotifyConnected ? "Connected" : spotifyClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
-              </div>
-              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
-                ${isSpotifyConnected 
-                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
-                  : html`<div className="chip">Not connected</div>`}
-              </div>
+          <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "16px", textAlign: "left" }}>SoundCloud (optional)</div>
+          <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div style=${{ flex: 1, textAlign: "left" }}>
+              <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSoundcloudConnected ? "Connected" : soundcloudClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
             </div>
-
-            ${!isSpotifyConnected && spotifyClientId && html`
-              <button 
-                className="pill primary" 
-                onClick=${onSpotifyAuth} 
-                type="button"
-                style=${{ width: "100%", marginTop: "8px" }}
-              >
-                Connect Spotify
-              </button>
-            `}
-
-            <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "8px" }}>
-              <div style=${{ flex: 1, textAlign: "left" }}>
-                <div style=${{ fontSize: "15px", fontWeight: 600 }}>SoundCloud</div>
-                <div style=${{ fontSize: "12px", color: "var(--muted)" }}>${isSoundcloudConnected ? "Connected" : soundcloudClientId ? "Ready to connect" : "Add Client ID in Settings"}</div>
-              </div>
-              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
-                ${isSoundcloudConnected 
-                  ? html`<div className="chip" style=${{ background: "rgba(48, 209, 88, 0.1)", color: "rgba(48, 209, 88, 1)", borderColor: "rgba(48, 209, 88, 0.3)" }}>Connected</div>`
-                  : html`<div className="chip">Not connected</div>`}
-              </div>
-            </div>
-
-            ${!isSoundcloudConnected && soundcloudClientId && html`
-              <button 
-                className="pill primary" 
-                onClick=${onSoundcloudAuth} 
-                type="button"
-                style=${{ width: "100%", marginTop: "8px" }}
-              >
-                Connect SoundCloud
-              </button>
-            `}
+            <div className="chip">${isSoundcloudConnected ? "Connected" : "Not connected"}</div>
           </div>
-        </div>
-
-        ${isSupabaseConnected && html`
-          <div style=${{ marginTop: "20px", padding: "16px", background: "var(--surface)", borderRadius: "12px", border: "1px solid var(--border)" }}>
-            <div style=${{ fontSize: "14px", fontWeight: 600, marginBottom: "8px" }}>Signed in as ${authedEmail}</div>
-            <div style=${{ fontSize: "12px", color: "var(--muted)", lineHeight: "1.5", marginBottom: "12px" }}>
-              You can access the app. Connect music services below or continue to the app.
-            </div>
+          ${!isSoundcloudConnected && soundcloudClientId && html`
             <button 
               className="pill primary" 
-              onClick=${() => window.location.reload()} 
+              onClick=${onSoundcloudAuth} 
               type="button"
-              style=${{ width: "100%" }}
+              style=${{ width: "100%", marginTop: "12px" }}
             >
-              Continue to App
+              Connect SoundCloud
             </button>
-          </div>
-        `}
+          `}
+        </div>
+
+        <button
+          className="pill"
+          onClick=${onContinue}
+          type="button"
+          style=${{ width: "100%", marginTop: "8px" }}
+          disabled=${!canContinue}
+        >
+          Continue
+        </button>
       </div>
     </div>`;
   }
@@ -616,7 +552,7 @@
         duration: formatTrackDuration(track.duration),
         soundcloudId: track.id,
         uri: track.permalink_url,
-        artwork: track.artwork_url,
+        artwork: track.artwork_url || track.user?.avatar_url || "",
       }));
     } catch (err) {
       console.error("SoundCloud search failed", err);
@@ -646,6 +582,63 @@
     } catch (err) {
       console.error("Spotify search failed", err);
       return [];
+    }
+  }
+
+  function parseDurationToSeconds(durationStr) {
+    if (!durationStr) return 0;
+    const parts = String(durationStr).trim().split(":");
+    if (!parts.length) return 0;
+    if (parts.length === 1) return Math.max(0, Number(parts[0]) || 0);
+    const [m, s] = parts.slice(-2);
+    const minutes = Number(m) || 0;
+    const seconds = Number(s) || 0;
+    return Math.max(0, minutes * 60 + seconds);
+  }
+
+  function isNativePlatform() {
+    try {
+      return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+    } catch {
+      return false;
+    }
+  }
+
+  function getSpotifyRemotePlugin() {
+    return window.Capacitor?.Plugins?.SpotifyRemote || null;
+  }
+
+  function appendQuery(url, params) {
+    const u = new URL(url);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value == null || value === "") return;
+      u.searchParams.set(key, value);
+    });
+    return u.toString();
+  }
+
+  async function resolveSoundCloudStreamUrl(trackId, clientId, token) {
+    if (!trackId || !clientId) return null;
+    try {
+      const infoUrl = appendQuery(`https://api-v2.soundcloud.com/tracks/${trackId}`, {
+        client_id: clientId,
+        oauth_token: token || undefined,
+      });
+      const infoRes = await fetch(infoUrl);
+      if (!infoRes.ok) throw new Error(`SoundCloud track lookup failed: ${infoRes.status}`);
+      const info = await infoRes.json();
+      const transcodings = info?.media?.transcodings || [];
+      const progressive = transcodings.find((t) => t?.format?.protocol === "progressive");
+      const pick = progressive || transcodings[0];
+      if (!pick?.url) return null;
+      const streamInfoUrl = appendQuery(pick.url, { client_id: clientId, oauth_token: token || undefined });
+      const streamRes = await fetch(streamInfoUrl);
+      if (!streamRes.ok) throw new Error(`SoundCloud stream lookup failed: ${streamRes.status}`);
+      const streamInfo = await streamRes.json();
+      return streamInfo?.url || null;
+    } catch (err) {
+      console.error("SoundCloud stream resolve failed", err);
+      return null;
     }
   }
 
@@ -818,6 +811,7 @@
         if (seg.audioData) {
           base.audioData = seg.audioData; // Base64 data URL for voice recordings
         }
+        if (seg.artwork) base.artwork = seg.artwork;
         if (seg.uri) base.uri = seg.uri;
         if (seg.spotifyId) base.spotifyId = seg.spotifyId;
         if (seg.soundcloudId) base.soundcloudId = seg.soundcloudId;
@@ -1109,7 +1103,7 @@
 	    </div>`;
 	  }
 
-	  function BuilderScreen({ segments, setSegments, toast, supabase, authHeaders, profileHandle, zip, zipOptIn }) {
+	  function BuilderScreen({ segments, setSegments, toast, supabase, authHeaders, profileHandle, zip, zipOptIn, onStartShow, playbackError }) {
     const [recording, setRecording] = useState(false);
     const [seconds, setSeconds] = useState(0);
     const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -1289,14 +1283,17 @@
 
       <div className="section">
         <div className="row">
-          <button className="pill primary" style=${{ flex: 1 }} onClick=${() => toast("Play (prototype)")} type="button">
+          <button className="pill primary" style=${{ flex: 1 }} onClick=${onStartShow} type="button" disabled=${!segments.length}>
             <span style=${{ display: "inline-flex", marginRight: "8px" }}><${Icon} name="play" /></span>
-            Play
+            Play Show
           </button>
           <button className="pill" style=${{ flex: 1 }} onClick=${() => setShowSaveDialog(true)} type="button" disabled=${!segments.length}>
             Publish
           </button>
         </div>
+        ${playbackError && html`<div style=${{ marginTop: "10px", fontSize: "12px", color: "var(--muted)" }}>
+          Playback note: ${playbackError}
+        </div>`}
       </div>
 
       <div style=${{ position: "fixed", bottom: "calc(var(--tabbar-h) + var(--safe-bottom) + 20px)", left: "50%", transform: "translateX(-50%)", zIndex: 50 }}>
@@ -2865,7 +2862,7 @@
 		    </div>`;
 		  }
 
-	  function ListenScreen({ supabase, supabaseSession, authHeaders, likes, toggleLike, toast, currentTrack, setCurrentTrack, isPlaying, setIsPlaying, currentTime, setCurrentTime, trackDuration, setTrackDuration }) {
+	  function ListenScreen({ supabase, supabaseSession, authHeaders, likes, toggleLike, toast, currentTrack, isPlaying, currentTime, trackDuration, onPlayPause, onSeek, onVolume, onSkipNext, onSkipPrev, playbackProvider }) {
 	    const [volume, setVolume] = useState(1);
 	    const [showComments, setShowComments] = useState(false);
 
@@ -2875,8 +2872,8 @@
 	        if (stored) {
 	          try {
 	            const track = JSON.parse(stored);
-	            setCurrentTrack(track);
-	            setTrackDuration(track.duration || 0);
+	            // Keep local cache for display when playback is inactive
+	            // Actual playback state comes from provider callbacks
 	          } catch {}
 	        }
 	      }
@@ -2890,7 +2887,7 @@
 	    };
 
 	    const handlePlayPause = () => {
-	      setIsPlaying(!isPlaying);
+	      onPlayPause();
 	    };
 
 	    const handleSeek = (e) => {
@@ -2898,7 +2895,7 @@
 	      const x = e.clientX - rect.left;
 	      const percent = Math.max(0, Math.min(1, x / rect.width));
 	      const newTime = percent * trackDuration;
-	      setCurrentTime(newTime);
+	      onSeek(newTime);
 	    };
 
 	    const handleVolumeChange = (e) => {
@@ -2906,6 +2903,7 @@
 	      const x = e.clientX - rect.left;
 	      const newVolume = Math.max(0, Math.min(1, x / rect.width));
 	      setVolume(newVolume);
+	      onVolume(newVolume);
 	    };
 
 	    const remainingTime = trackDuration - currentTime;
@@ -2925,6 +2923,9 @@
 	          <div style=${{ textAlign: "center", marginBottom: "40px" }}>
 	            <h1 style=${{ fontSize: "24px", fontWeight: 700, margin: "0 0 8px" }}>${currentTrack.title || "Untitled"}</h1>
 	            <div style=${{ color: "var(--muted)", fontSize: "16px" }}>${currentTrack.host || currentTrack.artist || "Unknown"}</div>
+	            ${playbackProvider && html`<div style=${{ color: "var(--muted)", fontSize: "12px", marginTop: "6px" }}>
+	              Source: ${playbackProvider === "spotify" ? "Spotify" : "SoundCloud"}
+	            </div>`}
 	          </div>
 	          <div style=${{ background: "rgba(0,0,0,0.3)", borderRadius: "16px", padding: "20px", marginBottom: "20px" }}>
 	            <div style=${{ marginBottom: "16px" }}>
@@ -2940,7 +2941,7 @@
 	              </div>
 	            </div>
 	            <div style=${{ display: "flex", justifyContent: "center", alignItems: "center", gap: "24px", marginBottom: "16px" }}>
-	              <button className="pill icon" onClick=${() => setCurrentTime(Math.max(0, currentTime - 10))} type="button" style=${{ fontSize: "20px" }}>
+	              <button className="pill icon" onClick=${() => onSeek(Math.max(0, currentTime - 10))} type="button" style=${{ fontSize: "20px" }}>
 	                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" /></svg>
 	              </button>
 	              <button className="pill icon primary" onClick=${handlePlayPause} type="button" style=${{ width: "64px", height: "64px", fontSize: "24px" }}>
@@ -2948,9 +2949,13 @@
 	                  ? html`<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>`
 	                  : html`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>`}
 	              </button>
-	              <button className="pill icon" onClick=${() => setCurrentTime(Math.min(trackDuration, currentTime + 10))} type="button" style=${{ fontSize: "20px" }}>
+	              <button className="pill icon" onClick=${() => onSeek(Math.min(trackDuration, currentTime + 10))} type="button" style=${{ fontSize: "20px" }}>
 	                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5" /></svg>
 	              </button>
+	            </div>
+	            <div style=${{ display: "flex", justifyContent: "center", gap: "12px", marginBottom: "16px" }}>
+	              <button className="pill" onClick=${onSkipPrev} type="button">Prev Track</button>
+	              <button className="pill" onClick=${onSkipNext} type="button">Next Track</button>
 	            </div>
 	            <div style=${{ marginBottom: "16px" }}>
 	              <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -3012,11 +3017,6 @@
 	    setSupabaseUrl,
 	    supabaseAnon,
 	    setSupabaseAnon,
-	    authedEmail,
-	    supabaseEmail,
-	    setSupabaseEmail,
-	    onSignIn,
-	    onSignOut,
 	    profileHandle,
 	    setProfileHandle,
 	    zip,
@@ -3116,18 +3116,17 @@
       <div className="section">
         <div className="section-head">
           <div className="section-title">Supabase</div>
-          <div className="section-note">${authedEmail ? "linked" : "optional"}</div>
+          <div className="section-note">optional storage</div>
         </div>
         <div className="card">
           <div className="row" style=${{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
-            <div className="row">
-              <div className="field grow">
-                <input value=${supabaseEmail} onChange=${(e) => setSupabaseEmail(e.target.value)} placeholder="you@example.com" />
-              </div>
-              ${authedEmail
-                ? html`<button className="pill" onClick=${onSignOut} type="button">Sign Out</button>`
-                : html`<button className="pill primary" onClick=${onSignIn} type="button">Email Link</button>`}
+            <div className="field">
+              <input value=${supabaseUrl} onChange=${(e) => setSupabaseUrl(e.target.value)} placeholder="Supabase URL" />
             </div>
+            <div className="field">
+              <input value=${supabaseAnon} onChange=${(e) => setSupabaseAnon(e.target.value)} placeholder="Supabase anon key" />
+            </div>
+            <div className="chip">Auth disabled in v1</div>
           </div>
         </div>
       </div>
@@ -3332,11 +3331,6 @@
     setSupabaseUrl,
     supabaseAnon,
     setSupabaseAnon,
-    authedEmail,
-    supabaseEmail,
-    setSupabaseEmail,
-    onSignIn,
-    onSignOut,
     profileHandle,
     setProfileHandle,
     zip,
@@ -3362,12 +3356,16 @@
 	    soundcloudConnected,
 	    onSoundcloudAuth,
 	    onSoundcloudDisconnect,
+	    spotifyProfile,
+	    soundcloudProfile,
 	  }) {
 	    const userId = supabaseSession?.user?.id || "";
 	    const [userShows, setUserShows] = useState([]);
 	    const [showSettings, setShowSettings] = useState(false);
 	    const [userStats, setUserStats] = useState({ followers: 0, following: 0, likes: 0 });
 	    const [displayName, setDisplayName] = useState("");
+	    const providerName = spotifyProfile?.displayName || soundcloudProfile?.displayName || "";
+	    const providerAvatar = spotifyProfile?.avatarUrl || soundcloudProfile?.avatarUrl || "";
 
 	    useEffect(() => {
 	      if (!supabase || !userId) {
@@ -3443,9 +3441,9 @@
 	          </button>
 	        </div>
 	        <div style=${{ display: "flex", gap: "16px", alignItems: "flex-start", marginBottom: "24px" }}>
-	          <div className="thumb" style=${{ width: "80px", height: "80px", borderRadius: "50%", flexShrink: 0 }}></div>
+	          <div className="thumb" style=${{ width: "80px", height: "80px", borderRadius: "50%", flexShrink: 0, backgroundImage: providerAvatar ? `url(${providerAvatar})` : "none", backgroundSize: "cover", backgroundPosition: "center" }}></div>
 	          <div style=${{ flex: 1, minWidth: 0 }}>
-	            <div style=${{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>${displayName || profileHandle || "User"}</div>
+	            <div style=${{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>${displayName || providerName || profileHandle || "User"}</div>
 	            <div style=${{ fontSize: "14px", color: "var(--muted)", marginBottom: "12px" }}>${profileHandle ? `@${profileHandle}` : "@handle"}</div>
 	            <div style=${{ display: "flex", gap: "16px", fontSize: "14px" }}>
 	              <div>
@@ -3502,11 +3500,6 @@
 	        setSupabaseUrl=${setSupabaseUrl}
 	        supabaseAnon=${supabaseAnon}
 	        setSupabaseAnon=${setSupabaseAnon}
-	        authedEmail=${authedEmail}
-	        supabaseEmail=${supabaseEmail}
-	        setSupabaseEmail=${setSupabaseEmail}
-	        onSignIn=${onSignIn}
-	        onSignOut=${onSignOut}
 	        profileHandle=${profileHandle}
 	        setProfileHandle=${setProfileHandle}
 	        zip=${zip}
@@ -3546,18 +3539,19 @@
     const [supabaseUrl, setSupabaseUrl] = useLocalStorageString(SUPABASE_URL_KEY, DEFAULT_SUPABASE_URL);
     const [supabaseAnon, setSupabaseAnon] = useLocalStorageString(SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON);
     const { client: supabase, session: supabaseSession, authHeaders, loading: supabaseLoading } = useSupabase(supabaseUrl || DEFAULT_SUPABASE_URL, supabaseAnon || DEFAULT_SUPABASE_ANON);
-    const [supabaseEmail, setSupabaseEmail] = useState("");
 
     const [spotifyClientId, setSpotifyClientId] = useLocalStorageString(SPOTIFY_CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
     const [spotifyToken, setSpotifyToken] = useLocalStorageString(SPOTIFY_TOKEN_KEY, "");
     const [spotifyRedirect, setSpotifyRedirect] = useLocalStorageString(SPOTIFY_REDIRECT_KEY, "");
     const [spotifyConnected, setSpotifyConnected] = useState(!!spotifyToken);
+    const [spotifyProfile, setSpotifyProfile] = useLocalStorageState(STORAGE.spotifyProfile, () => null);
 
     const [soundcloudClientId, setSoundcloudClientId] = useLocalStorageString(SOUNDCLOUD_CLIENT_ID_KEY, DEFAULT_SOUNDCLOUD_CLIENT_ID);
     const [soundcloudToken, setSoundcloudToken] = useLocalStorageString(SOUNDCLOUD_TOKEN_KEY, "");
     // SoundCloud is available by default (has client ID), connected means authenticated
     const [soundcloudConnected, setSoundcloudConnected] = useState(!!soundcloudToken);
     const soundcloudAvailable = useMemo(() => !!(soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID), [soundcloudClientId]);
+    const [soundcloudProfile, setSoundcloudProfile] = useLocalStorageState(STORAGE.soundcloudProfile, () => null);
 
     const [profileHandle, setProfileHandle] = useLocalStorageString(PROFILE_HANDLE_KEY, "");
     const [zip, setZip] = useLocalStorageString(PROFILE_ZIP_KEY, "");
@@ -3574,6 +3568,28 @@
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [trackDuration, setTrackDuration] = useState(0);
+    const [playbackQueue, setPlaybackQueue] = useState([]);
+    const [playbackIndex, setPlaybackIndex] = useState(-1);
+    const [playbackProvider, setPlaybackProvider] = useState(null);
+    const [playbackError, setPlaybackError] = useState("");
+    const soundcloudAudioRef = useRef(null);
+    const playbackRef = useRef({
+      queue: [],
+      index: -1,
+      spotifyPoll: null,
+      spotifyConnected: false,
+      endGuard: false,
+    });
+    const handleTrackEndedRef = useRef(null);
+    const spotifyRedirectUri = useMemo(() => {
+      if (spotifyRedirect) return spotifyRedirect;
+      if (isNativePlatform()) return "radioapp://callback";
+      return `${window.location.origin}/mobile/`;
+    }, [spotifyRedirect]);
+    const soundcloudRedirectUri = useMemo(() => {
+      if (isNativePlatform()) return "radioapp://callback";
+      return `${window.location.origin}${window.location.pathname}`;
+    }, []);
 
     useEffect(() => {
       if (currentTrack) {
@@ -3584,19 +3600,31 @@
     }, [currentTrack]);
 
     useEffect(() => {
-      if (!isPlaying || !trackDuration) return;
-      const interval = setInterval(() => {
-        setCurrentTime((prev) => {
-          const next = prev + 1;
-          if (next >= trackDuration) {
-            setIsPlaying(false);
-            return trackDuration;
-          }
-          return next;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }, [isPlaying, trackDuration]);
+      const audio = soundcloudAudioRef.current;
+      if (!audio) return;
+      const onTime = () => {
+        setCurrentTime(audio.currentTime || 0);
+        if (Number.isFinite(audio.duration)) {
+          setTrackDuration(Math.floor(audio.duration));
+        }
+      };
+      const onEnded = () => {
+        setIsPlaying(false);
+        if (handleTrackEndedRef.current) handleTrackEndedRef.current("soundcloud");
+      };
+      const onPlay = () => setIsPlaying(true);
+      const onPause = () => setIsPlaying(false);
+      audio.addEventListener("timeupdate", onTime);
+      audio.addEventListener("ended", onEnded);
+      audio.addEventListener("play", onPlay);
+      audio.addEventListener("pause", onPause);
+      return () => {
+        audio.removeEventListener("timeupdate", onTime);
+        audio.removeEventListener("ended", onEnded);
+        audio.removeEventListener("play", onPlay);
+        audio.removeEventListener("pause", onPause);
+      };
+    }, []);
 
     useEffect(() => {
       if (!supabase || !supabaseSession?.user?.id) return;
@@ -3661,7 +3689,6 @@
 	      };
 	    }, [supabase, supabaseSession?.user?.id]);
 
-	    const authedEmail = supabaseSession?.user?.email || "";
 	    const authedUserId = supabaseSession?.user?.id || "";
 	    const [following, setFollowing] = useState(() => new Set());
 	    const [followers, setFollowers] = useState(() => new Set());
@@ -3749,42 +3776,9 @@
 	      };
 	    }, [supabase, authedUserId]);
 
-	    async function supabaseSignIn() {
-	      if (!supabase) {
-	        show("Add Supabase URL + anon key");
-        return;
-      }
-      const email = String(supabaseEmail || "").trim();
-      if (!email) {
-        show("Enter an email");
-        return;
-      }
-      try {
-        const redirect = `${window.location.origin}${window.location.pathname}`;
-        const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect } });
-        if (error) throw error;
-        show("Check email for link");
-      } catch (err) {
-        show(`Sign-in failed`);
-      }
-    }
-
-    async function supabaseSignOut() {
-      if (!supabase) return;
-      try {
-        await supabase.auth.signOut();
-        show("Signed out");
-      } catch {
-        // ignore
-      }
-    }
-
     async function startSpotifyAuth() {
       const clientId = spotifyClientId || DEFAULT_CLIENT_ID;
-      // Use custom redirect URI if set, otherwise use current origin + /mobile/
-      // This allows local IP addresses like 192.168.1.71:5173 to work
-      // Default matches what user configured in Spotify Dashboard: http://192.168.1.71:5173/mobile/
-      const redirectUri = spotifyRedirect || `${window.location.origin}/mobile/`;
+      const redirectUri = spotifyRedirectUri;
       
       if (!clientId) {
         show("Add Spotify Client ID");
@@ -3803,17 +3797,23 @@
         const redirect = encodeURIComponent(redirectUri);
         const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${clientId}&scope=${scopes}&redirect_uri=${redirect}&code_challenge_method=S256&code_challenge=${challenge}&state=${authState}&show_dialog=true`;
         console.log("Starting Spotify auth with redirect URI:", redirectUri);
-        window.location.href = url;
+        const browser = window.Capacitor?.Plugins?.Browser || null;
+        if (browser && isNativePlatform()) {
+          await browser.open({ url });
+        } else {
+          window.location.href = url;
+        }
       } catch (err) {
         console.error("Spotify auth failed", err);
         show("Auth failed: " + (err.message || "Unknown error"));
       }
     }
 
-    async function handleSpotifyCallback() {
+    async function handleSpotifyCallback(rawUrl) {
+      const url = rawUrl ? new URL(rawUrl) : window.location;
       // Check both query params (from /mobile/?code=...) and hash (from callback.html redirect)
-      const searchParams = new URLSearchParams(window.location.search);
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const searchParams = new URLSearchParams(url.search);
+      const hashParams = new URLSearchParams(String(url.hash || "").replace(/^#/, ""));
       
       // Try query params first, then hash
       const code = searchParams.get("code") || hashParams.get("code");
@@ -3842,7 +3842,7 @@
       const storedState = sessionStorage.getItem("rs_pkce_state");
       const verifier = sessionStorage.getItem("rs_pkce_verifier");
       // Use stored redirect URI or fallback to auto-calculated one
-      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || `${window.location.origin}/mobile/`;
+      const redirectUri = sessionStorage.getItem("rs_pkce_redirect") || spotifyRedirectUri;
       const clientId = sessionStorage.getItem("rs_pkce_client") || DEFAULT_CLIENT_ID;
       
       if (!verifier) {
@@ -3896,8 +3896,10 @@
         sessionStorage.removeItem("rs_pkce_redirect");
         sessionStorage.removeItem("rs_pkce_client");
         // Clean URL - remove both query params and hash
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
+        if (!rawUrl) {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
         show("Spotify connected");
         return true;
       } catch (err) {
@@ -3915,6 +3917,8 @@
     function disconnectSpotify() {
       setSpotifyToken("");
       setSpotifyConnected(false);
+      playbackRef.current.spotifyConnected = false;
+      stopSpotifyPolling();
       show("Spotify disconnected");
     }
 
@@ -3925,11 +3929,11 @@
         return;
       }
       // Auto-calculate redirect URI - must match what's configured in SoundCloud app
-      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      const redirectUri = soundcloudRedirectUri;
       
       // Check if we're in local development
       const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || /^192\.168\./.test(window.location.hostname);
-      if (isLocal) {
+      if (!isNativePlatform() && isLocal) {
         const errorMsg = `SoundCloud doesn't allow local IPs (${window.location.hostname}). Use localhost or deploy to a public URL. Current redirect: ${redirectUri}`;
         console.error(errorMsg);
         show("SoundCloud auth requires localhost or public URL. Local IPs not allowed.");
@@ -3941,15 +3945,21 @@
       try {
         const url = `https://soundcloud.com/connect?client_id=${clientId}&response_type=token&scope=non-expiring&display=popup&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(authState)}`;
         console.log("Starting SoundCloud auth with redirect URI:", redirectUri);
-        window.location.href = url;
+        const browser = window.Capacitor?.Plugins?.Browser || null;
+        if (browser && isNativePlatform()) {
+          await browser.open({ url });
+        } else {
+          window.location.href = url;
+        }
       } catch (err) {
         console.error("SoundCloud auth failed", err);
         show("Auth failed: " + (err.message || "Unknown error"));
       }
     }
 
-    async function handleSoundcloudCallback() {
-      const hash = window.location.hash || "";
+    async function handleSoundcloudCallback(rawUrl) {
+      const url = rawUrl ? new URL(rawUrl) : window.location;
+      const hash = url.hash || "";
       const params = new URLSearchParams(hash.replace(/^#/, ""));
       const token = params.get("access_token");
       const error = params.get("error");
@@ -3965,8 +3975,10 @@
         }
         show(`SoundCloud auth failed: ${errorMsg}`);
         sessionStorage.removeItem("rs_sc_state");
-        const cleanUrl = window.location.pathname + window.location.search;
-        window.history.replaceState({}, document.title, cleanUrl);
+        if (!rawUrl) {
+          const cleanUrl = window.location.pathname + window.location.search;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
         return false;
       }
       
@@ -3984,8 +3996,10 @@
       setSoundcloudToken(token);
       setSoundcloudConnected(true);
       sessionStorage.removeItem("rs_sc_state");
-      const cleanUrl = window.location.pathname + window.location.search;
-      window.history.replaceState({}, document.title, cleanUrl);
+      if (!rawUrl) {
+        const cleanUrl = window.location.pathname + window.location.search;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
       show("SoundCloud connected");
       return true;
     }
@@ -3993,8 +4007,279 @@
     function disconnectSoundcloud() {
       setSoundcloudToken("");
       setSoundcloudConnected(false);
+      const audio = soundcloudAudioRef.current;
+      if (audio) {
+        try {
+          audio.pause();
+        } catch {}
+      }
       show("SoundCloud disconnected");
     }
+
+    const stopSpotifyPolling = () => {
+      if (playbackRef.current.spotifyPoll) {
+        window.clearInterval(playbackRef.current.spotifyPoll);
+        playbackRef.current.spotifyPoll = null;
+      }
+    };
+
+    const startSpotifyPolling = () => {
+      stopSpotifyPolling();
+      const plugin = getSpotifyRemotePlugin();
+      if (!plugin) return;
+      playbackRef.current.spotifyPoll = window.setInterval(async () => {
+        try {
+          const state = await plugin.getPlayerState();
+          if (!state) return;
+          const durationMs = Number(state.durationMs || state.duration || 0);
+          const positionMs = Number(state.positionMs || state.position || 0);
+          const paused = !!state.isPaused;
+          if (durationMs) setTrackDuration(Math.floor(durationMs / 1000));
+          if (positionMs || positionMs === 0) setCurrentTime(Math.floor(positionMs / 1000));
+          setIsPlaying(!paused);
+          if (durationMs && positionMs >= durationMs - 900) {
+            if (!playbackRef.current.endGuard) {
+              playbackRef.current.endGuard = true;
+              handleTrackEnded("spotify");
+            }
+          } else {
+            playbackRef.current.endGuard = false;
+          }
+        } catch (err) {
+          console.warn("Spotify player state failed", err);
+        }
+      }, 1000);
+    };
+
+    const buildPlaybackQueue = (queueSegments) => {
+      return (queueSegments || [])
+        .map((seg) => {
+          if (!seg) return null;
+          const source = String(seg.source || "").toLowerCase();
+          if (source === "spotify" && seg.spotifyId) {
+            return {
+              id: seg.id,
+              provider: "spotify",
+              spotifyId: seg.spotifyId,
+              uri: seg.uri || `spotify:track:${seg.spotifyId}`,
+              title: seg.title,
+              artist: seg.artist,
+              artwork: seg.artwork || "",
+              durationSeconds: parseDurationToSeconds(seg.duration),
+            };
+          }
+          if (source === "soundcloud" && seg.soundcloudId) {
+            return {
+              id: seg.id,
+              provider: "soundcloud",
+              soundcloudId: seg.soundcloudId,
+              uri: seg.uri || "",
+              title: seg.title,
+              artist: seg.artist,
+              artwork: seg.artwork || "",
+              durationSeconds: parseDurationToSeconds(seg.duration),
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+    };
+
+    const stopPlayback = () => {
+      stopSpotifyPolling();
+      playbackRef.current.queue = [];
+      playbackRef.current.index = -1;
+      playbackRef.current.endGuard = false;
+      setPlaybackQueue([]);
+      setPlaybackIndex(-1);
+      setPlaybackProvider(null);
+      setPlaybackError("");
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setTrackDuration(0);
+      const audio = soundcloudAudioRef.current;
+      if (audio) {
+        try {
+          audio.pause();
+          audio.src = "";
+        } catch {}
+      }
+    };
+
+    const playSpotifySegment = async (seg) => {
+      const plugin = getSpotifyRemotePlugin();
+      const trackUri = seg.uri || `spotify:track:${seg.spotifyId}`;
+      if (!plugin) {
+        if (seg.spotifyId) {
+          window.open(`https://open.spotify.com/track/${seg.spotifyId}`, "_blank");
+        } else if (trackUri) {
+          window.open(trackUri, "_blank");
+        }
+        throw new Error("Spotify App Remote not available");
+      }
+      if (!spotifyToken) {
+        throw new Error("Spotify access token missing");
+      }
+      if (!playbackRef.current.spotifyConnected) {
+        await plugin.connect({
+          clientId: spotifyClientId || DEFAULT_CLIENT_ID,
+          redirectUri: spotifyRedirectUri,
+          accessToken: spotifyToken,
+        });
+        playbackRef.current.spotifyConnected = true;
+      }
+      await plugin.play({ uri: trackUri });
+      startSpotifyPolling();
+    };
+
+    const playSoundcloudSegment = async (seg) => {
+      const audio = soundcloudAudioRef.current;
+      if (!audio) throw new Error("SoundCloud audio unavailable");
+      const clientId = soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID;
+      const streamUrl = await resolveSoundCloudStreamUrl(seg.soundcloudId, clientId, soundcloudToken);
+      if (!streamUrl) {
+        const deepLink = seg.uri || (seg.soundcloudId ? `soundcloud://tracks/${seg.soundcloudId}` : "");
+        if (deepLink) {
+          window.open(deepLink, "_blank");
+        }
+        throw new Error("SoundCloud stream unavailable");
+      }
+      audio.src = streamUrl;
+      await audio.play();
+    };
+
+    const playQueueIndex = async (index) => {
+      const queue = playbackRef.current.queue;
+      const seg = queue[index];
+      if (!seg) return;
+      playbackRef.current.index = index;
+      playbackRef.current.endGuard = false;
+      setPlaybackIndex(index);
+      setPlaybackProvider(seg.provider);
+      setPlaybackError("");
+      setCurrentTrack({
+        id: seg.id,
+        title: seg.title,
+        artist: seg.artist,
+        host: seg.artist,
+        cover_url: seg.artwork || "",
+        duration: seg.durationSeconds || 0,
+        provider: seg.provider,
+      });
+      setTrackDuration(seg.durationSeconds || 0);
+      setCurrentTime(0);
+      try {
+        if (seg.provider === "spotify") {
+          await playSpotifySegment(seg);
+        } else if (seg.provider === "soundcloud") {
+          await playSoundcloudSegment(seg);
+        }
+        setIsPlaying(true);
+      } catch (err) {
+        console.error("Playback failed", err);
+        setPlaybackError(err?.message || "Playback failed");
+        show("Playback failed, skipping");
+        handleTrackEnded("error");
+      }
+    };
+
+    const startShowPlayback = () => {
+      const queue = buildPlaybackQueue(segments);
+      if (!queue.length) {
+        show("No playable tracks in this show");
+        return;
+      }
+      stopPlayback();
+      playbackRef.current.queue = queue;
+      playbackRef.current.index = 0;
+      playbackRef.current.endGuard = false;
+      setPlaybackQueue(queue);
+      setPlaybackIndex(0);
+      playQueueIndex(0).catch(() => {});
+      setTab("listen");
+    };
+
+    const handleTrackEnded = (source) => {
+      const nextIndex = playbackRef.current.index + 1;
+      if (nextIndex >= playbackRef.current.queue.length) {
+        setIsPlaying(false);
+        return;
+      }
+      playQueueIndex(nextIndex).catch((err) => {
+        console.error("Next track failed", err);
+        setPlaybackError(err?.message || "Next track failed");
+      });
+    };
+
+    useEffect(() => {
+      handleTrackEndedRef.current = handleTrackEnded;
+    });
+
+    useEffect(() => {
+      return () => {
+        stopSpotifyPolling();
+      };
+    }, []);
+
+    const togglePlayPause = async () => {
+      const provider = playbackProvider;
+      if (!provider) return;
+      if (provider === "spotify") {
+        const plugin = getSpotifyRemotePlugin();
+        if (!plugin) {
+          show("Spotify remote unavailable");
+          return;
+        }
+        try {
+          if (isPlaying) await plugin.pause();
+          else await plugin.resume();
+        } catch (err) {
+          console.warn("Spotify pause/resume failed", err);
+        }
+        return;
+      }
+      if (provider === "soundcloud") {
+        const audio = soundcloudAudioRef.current;
+        if (!audio) return;
+        if (audio.paused) await audio.play();
+        else audio.pause();
+      }
+    };
+
+    const seekTo = async (seconds) => {
+      const provider = playbackProvider;
+      if (!provider) return;
+      if (provider === "spotify") {
+        const plugin = getSpotifyRemotePlugin();
+        if (!plugin) return;
+        try {
+          await plugin.seek({ positionMs: Math.floor(seconds * 1000) });
+        } catch {}
+        return;
+      }
+      if (provider === "soundcloud") {
+        const audio = soundcloudAudioRef.current;
+        if (!audio) return;
+        audio.currentTime = seconds;
+      }
+    };
+
+    const setPlaybackVolume = (level) => {
+      const audio = soundcloudAudioRef.current;
+      if (audio) audio.volume = Math.max(0, Math.min(1, level));
+    };
+
+    const skipNext = () => {
+      const nextIndex = playbackRef.current.index + 1;
+      if (nextIndex >= playbackRef.current.queue.length) return;
+      playQueueIndex(nextIndex).catch(() => {});
+    };
+
+    const skipPrev = () => {
+      const prevIndex = playbackRef.current.index - 1;
+      if (prevIndex < 0) return;
+      playQueueIndex(prevIndex).catch(() => {});
+    };
 
     // Auto-populate Supabase values with defaults if empty
     useEffect(() => {
@@ -4009,7 +4294,85 @@
     useEffect(() => {
       handleSpotifyCallback().catch(() => {});
       handleSoundcloudCallback().catch(() => {});
+      const app = window.Capacitor?.Plugins?.App;
+      if (app && isNativePlatform()) {
+        const listener = app.addListener("appUrlOpen", (data) => {
+          const url = data?.url;
+          if (!url) return;
+          handleSpotifyCallback(url).catch(() => {});
+          handleSoundcloudCallback(url).catch(() => {});
+        });
+        return () => {
+          try {
+            listener?.remove?.();
+          } catch {}
+        };
+      }
+      return undefined;
     }, []);
+
+    useEffect(() => {
+      if (!spotifyToken) {
+        setSpotifyProfile(null);
+        return;
+      }
+      let ignore = false;
+      (async () => {
+        try {
+          const res = await fetch("https://api.spotify.com/v1/me", {
+            headers: { Authorization: `Bearer ${spotifyToken}` },
+          });
+          if (!res.ok) throw new Error(`Spotify profile error: ${res.status}`);
+          const data = await res.json();
+          if (!ignore) {
+            setSpotifyProfile({
+              provider: "spotify",
+              id: data?.id || "",
+              displayName: data?.display_name || data?.id || "Spotify User",
+              avatarUrl: data?.images?.[0]?.url || "",
+            });
+          }
+        } catch (err) {
+          console.warn("Spotify profile fetch failed", err);
+        }
+      })();
+      return () => {
+        ignore = true;
+      };
+    }, [spotifyToken]);
+
+    useEffect(() => {
+      if (!soundcloudToken) {
+        setSoundcloudProfile(null);
+        return;
+      }
+      let ignore = false;
+      (async () => {
+        try {
+          const clientId = soundcloudClientId || DEFAULT_SOUNDCLOUD_CLIENT_ID;
+          const url = appendQuery("https://api-v2.soundcloud.com/me", {
+            client_id: clientId,
+            oauth_token: soundcloudToken,
+          });
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`SoundCloud profile error: ${res.status}`);
+          const data = await res.json();
+          if (!ignore) {
+            setSoundcloudProfile({
+              provider: "soundcloud",
+              id: data?.id || "",
+              displayName: data?.username || data?.full_name || "SoundCloud User",
+              avatarUrl: data?.avatar_url || "",
+            });
+          }
+        } catch (err) {
+          console.warn("SoundCloud profile fetch failed", err);
+        }
+      })();
+      return () => {
+        ignore = true;
+      };
+    }, [soundcloudToken, soundcloudClientId]);
 
     async function saveProfile() {
       if (!supabase || !authedUserId) {
@@ -4076,7 +4439,6 @@
       () => [
         { name: "SoundCloud", connected: soundcloudConnected, available: soundcloudAvailable },
         { name: "Spotify", connected: spotifyConnected },
-        { name: "Apple Music", connected: false },
       ],
       [spotifyConnected, soundcloudConnected, soundcloudAvailable]
     );
@@ -4172,16 +4534,20 @@
 	      }
 	    };
 
-	    const onAddTrack = (t) => {
-	      const seg = {
-	        id: `${t.id}_${Date.now()}`,
-	        type: "track",
+    const onAddTrack = (t) => {
+      const seg = {
+        id: `${t.id}_${Date.now()}`,
+        type: "track",
         title: t.title,
         artist: t.artist,
         source: t.source,
         duration: t.duration,
         cue: true,
         fade: true,
+        spotifyId: t.spotifyId,
+        soundcloudId: t.soundcloudId,
+        uri: t.uri,
+        artwork: t.artwork || "",
       };
       setSegments((prev) => [seg, ...prev]);
       show("Added to Builder");
@@ -4233,10 +4599,14 @@
                   id: seg.id || `seg_${Date.now()}`,
                   title: seg.title || "Untitled",
                   artist: seg.subtitle || seg.artist || "—",
-                  source: seg.type === "spotify" ? "Spotify" : seg.type === "upload" ? "Upload" : seg.type === "voice" ? "Mic" : "Track",
+                  source: seg.type === "spotify" ? "Spotify" : seg.type === "soundcloud" ? "SoundCloud" : seg.type === "upload" ? "Upload" : seg.type === "voice" ? "Mic" : "Track",
                   duration: typeof seg.duration === "number" ? mmss(seg.duration) : seg.duration ? String(seg.duration) : "0:00",
                   cue: !!seg.cue,
                   fade: !!seg.fadeIn || !!seg.fadeOut,
+                  spotifyId: seg.spotifyId || seg.spotify_id || null,
+                  soundcloudId: seg.soundcloudId || seg.soundcloud_id || null,
+                  uri: seg.uri || "",
+                  artwork: seg.artwork || "",
                 };
                 return base;
               })
@@ -4265,22 +4635,17 @@
       </div>`;
     }
 
-    // Show sign-in screen if not authenticated with Supabase (required)
-    if (!authedEmail) {
+    const needsProvider = !spotifyConnected;
+    if (needsProvider) {
       return html`<div className="shell" style=${{ minHeight: "100dvh" }}>
-        <${SignInScreen}
-          supabase=${supabase}
-          supabaseSession=${supabaseSession}
-          supabaseEmail=${supabaseEmail}
-          setSupabaseEmail=${setSupabaseEmail}
-          onSupabaseSignIn=${supabaseSignIn}
+        <${ConnectScreen}
           spotifyClientId=${spotifyClientId}
           spotifyConnected=${spotifyConnected}
           onSpotifyAuth=${startSpotifyAuth}
           soundcloudClientId=${soundcloudClientId}
           soundcloudConnected=${soundcloudConnected}
           onSoundcloudAuth=${startSoundcloudAuth}
-          toast=${show}
+          onContinue=${() => setTab("discover")}
         />
         <${Toast} toast=${toast} />
       </div>`;
@@ -4330,6 +4695,8 @@
             profileHandle=${profileHandle}
             zip=${zip}
             zipOptIn=${zipOptIn}
+            onStartShow=${startShowPlayback}
+            playbackError=${playbackError}
           />`
         : tab === "listen"
         ? html`<${ListenScreen}
@@ -4340,13 +4707,15 @@
             toggleLike=${toggleLike}
             toast=${show}
             currentTrack=${currentTrack}
-            setCurrentTrack=${setCurrentTrack}
             isPlaying=${isPlaying}
-            setIsPlaying=${setIsPlaying}
             currentTime=${currentTime}
-            setCurrentTime=${setCurrentTime}
             trackDuration=${trackDuration}
-            setTrackDuration=${setTrackDuration}
+            onPlayPause=${togglePlayPause}
+            onSeek=${seekTo}
+            onVolume=${setPlaybackVolume}
+            onSkipNext=${skipNext}
+            onSkipPrev=${skipPrev}
+            playbackProvider=${playbackProvider}
           />`
         : html`<${ProfileScreen}
 	            theme=${theme}
@@ -4367,11 +4736,6 @@
 	            setSupabaseUrl=${setSupabaseUrl}
 	            supabaseAnon=${supabaseAnon}
             setSupabaseAnon=${setSupabaseAnon}
-            authedEmail=${authedEmail}
-            supabaseEmail=${supabaseEmail}
-            setSupabaseEmail=${setSupabaseEmail}
-            onSignIn=${supabaseSignIn}
-            onSignOut=${supabaseSignOut}
             profileHandle=${profileHandle}
             setProfileHandle=${setProfileHandle}
             zip=${zip}
@@ -4397,6 +4761,8 @@
 	            soundcloudConnected=${soundcloudConnected}
 	            onSoundcloudAuth=${startSoundcloudAuth}
 	            onSoundcloudDisconnect=${disconnectSoundcloud}
+	            spotifyProfile=${spotifyProfile}
+	            soundcloudProfile=${soundcloudProfile}
 	          />`;
 
     return html`<div className="shell">
@@ -4407,10 +4773,11 @@
         isPlaying=${isPlaying}
         currentTime=${currentTime}
         duration=${trackDuration}
-        onPlayPause=${() => setIsPlaying(!isPlaying)}
+        onPlayPause=${togglePlayPause}
         onNavigateToListen=${() => setTab("listen")}
       />
       <${TabBar} value=${tab} onChange=${setTab} />
+      <audio ref=${soundcloudAudioRef} playsInline style=${{ display: "none" }}></audio>
       <${Toast} toast=${toast} />
     </div>`;
   }

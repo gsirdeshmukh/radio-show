@@ -25,6 +25,7 @@ This guide will help you convert your PWA into a native iOS app that can be dist
 ```bash
 cd /Users/gaurav/building/radio-show/radio-show/radio-show
 npm install
+npm install @capacitor/browser@^5.0.0
 ```
 
 ## Step 2: Initialize Capacitor (if not already done)
@@ -130,6 +131,50 @@ To add capabilities:
 1. In Xcode, go to **Signing & Capabilities** tab
 2. Click **+ Capability**
 3. Add the required capabilities
+
+## Step 7b: Spotify App Remote (Required for v1 Playback)
+
+The mobile app controls Spotify via the iOS App Remote SDK (the Spotify app is the audio engine).
+
+1. **Add the Spotify iOS SDK**
+   - Xcode → File → Add Packages…
+   - URL: `https://github.com/spotify/ios-sdk`
+   - Add the `SpotifyiOS` package to the App target
+
+2. **Register a URL Scheme**
+   - In Xcode, select the App target → Info → URL Types
+   - Add a new URL type with scheme `radioapp`
+   - This must match the Spotify app redirect URI: `radioapp://callback`
+
+3. **Add Query Schemes**
+   - In `Info.plist`, add:
+     ```xml
+     <key>LSApplicationQueriesSchemes</key>
+     <array>
+       <string>spotify</string>
+     </array>
+     ```
+
+4. **App Remote bridge (Capacitor plugin)**
+   - Create a native plugin that exposes:
+     - `connect({ clientId, redirectUri })`
+     - `play({ uri })`
+     - `pause()`
+     - `resume()`
+     - `seek({ positionMs })`
+     - `getPlayerState()` → `{ positionMs, durationMs, isPaused }`
+   - Hook `application(_:open:options:)` to pass the callback URL to Spotify:
+     ```swift
+     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+         if spotifySessionManager.application(app, open: url, options: options) { return true }
+         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+     }
+     ```
+   - The web app calls `window.Capacitor.Plugins.SpotifyRemote` (see `mobile/app.js`).
+
+5. **Spotify app requirement**
+   - Playback requires the Spotify app installed on device.
+   - If not installed, prompt the user to install from the App Store.
 
 ## Step 8: Test in iOS Simulator
 
@@ -241,4 +286,3 @@ Then run `npx cap sync ios` and the app will reload when you make changes.
 - Configure app metadata and description
 - Set up push notifications (if needed)
 - Add analytics (if desired)
-

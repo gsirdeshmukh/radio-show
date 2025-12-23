@@ -168,9 +168,10 @@
     dom.fadeDuration = document.getElementById("fade-duration");
     dom.connectToggle = document.getElementById("connect-toggle");
     dom.connectPanel = document.getElementById("connect-panel");
-    dom.themeSwitch = document.getElementById("theme-switch");
-    dom.fontSwitch = document.getElementById("font-switch");
-    dom.fontCustom = document.getElementById("font-custom");
+	    dom.themeSwitch = document.getElementById("theme-switch");
+	    dom.modeToggle = document.getElementById("mode-toggle");
+	    dom.fontSwitch = document.getElementById("font-switch");
+	    dom.fontCustom = document.getElementById("font-custom");
     dom.saveShowBtn = document.getElementById("save-show-btn");
     dom.publishShowBtn = document.getElementById("publish-show-btn");
     dom.loadShowBtn = document.getElementById("load-show-btn");
@@ -304,7 +305,8 @@
     dom.forgetTokenBtn.addEventListener("click", forgetToken);
     dom.connectToggle.addEventListener("click", toggleConnectPanel);
     dom.connectClose.addEventListener("click", toggleConnectPanel);
-    dom.themeSwitch && dom.themeSwitch.addEventListener("click", handleThemeSwitch);
+	    dom.themeSwitch && dom.themeSwitch.addEventListener("click", handleThemeSwitch);
+	    dom.modeToggle && dom.modeToggle.addEventListener("click", toggleMode);
     dom.fontSwitch && dom.fontSwitch.addEventListener("click", handleFontSwitch);
     if (dom.fontCustom) {
       dom.fontCustom.querySelectorAll('input[type="color"]').forEach((input) => {
@@ -534,6 +536,8 @@
     dom.connectToggle.textContent = collapsed ? "Auth Panel" : "Hide Auth";
   }
 
+  let currentTheme = "frost";
+
   function handleThemeSwitch(e) {
     const btn = e.target.closest(".theme-dot");
     if (!btn) return;
@@ -545,6 +549,19 @@
   function applySavedTheme() {
     const theme = sessionStorage.getItem("rs_theme") || "frost";
     applyTheme(theme);
+  }
+
+  function toggleMode() {
+    const isLight = currentTheme === "frost";
+    if (isLight) {
+      const savedDark = sessionStorage.getItem("rs_dark_theme") || "default";
+      applyTheme(savedDark);
+      sessionStorage.setItem("rs_theme", savedDark);
+    } else {
+      sessionStorage.setItem("rs_dark_theme", currentTheme);
+      applyTheme("frost");
+      sessionStorage.setItem("rs_theme", "frost");
+    }
   }
 
   function handleFontSwitch(e) {
@@ -572,6 +589,7 @@
       frost: { accent: "#0b84ff", accent2: "#af52de", panel: "#f5f6f8", panelStrong: "#eef2f5", bg: "#ffffff", text: "#0f172a", muted: "#5b6b82", grid: "rgba(15,23,42,0.12)" },
     };
     const t = themes[theme] || themes.default;
+    currentTheme = theme;
     root.style.setProperty("--accent", t.accent);
     root.style.setProperty("--accent-2", t.accent2);
     root.style.setProperty("--panel", t.panel);
@@ -580,6 +598,9 @@
     root.style.setProperty("--text", t.text);
     root.style.setProperty("--muted", t.muted);
     root.style.setProperty("--grid", t.grid);
+    if (dom.modeToggle) {
+      dom.modeToggle.textContent = theme === "frost" ? "Dark Mode" : "Light Mode";
+    }
   }
 
   function applyFont(font, overrideColor) {
@@ -589,7 +610,6 @@
       aqua: { text: "#6af5c8" },
       amber: { text: "#ffb347" },
       rose: { text: "#ff8fb1" },
-      iris: { text: "#b388ff" },
     };
     root.style.setProperty("--font-body", mono);
     root.style.setProperty("--font-heading", mono);

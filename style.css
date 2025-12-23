@@ -306,7 +306,6 @@ p {
 .font-dot[data-font="aqua"] { background: linear-gradient(135deg, #6af5c8, #2ed8aa); }
 .font-dot[data-font="amber"] { background: linear-gradient(135deg, #ffb347, #ff8c42); }
 .font-dot[data-font="rose"] { background: linear-gradient(135deg, #ff8fb1, #ff6ea9); }
-.font-dot[data-font="iris"] { background: linear-gradient(135deg, #b388ff, #7f7bff); }
 
 .font-custom {
   display: flex;
@@ -1145,8 +1144,8 @@ textarea:focus-visible {
 
 .noscript {
   display: block;
-  color: #000;
-  background: #ffd166;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
   padding: 10px;
   margin-top: 16px;
 }
