@@ -190,6 +190,7 @@ p {
 .top-actions {
   display: flex;
   gap: 10px;
+  margin-top: auto;
 }
 
 .search-wrap {
@@ -880,18 +881,41 @@ textarea:focus-visible {
 .panel.sessions .list {
   overflow-y: auto;
   flex: 1;
+  gap: 8px;
+}
+.panel.sessions .list li {
+  padding: 8px 10px;
+  gap: 8px;
+}
+.panel.sessions .list .meta {
+  gap: 2px;
+}
+.panel.sessions .list .title {
+  font-size: 13px;
+}
+.panel.sessions .list .subtitle {
+  font-size: 11px;
+}
+.panel.sessions .list .actions {
+  gap: 6px;
+}
+.panel.sessions .row.wrap {
+  gap: 6px;
+}
+.panel.sessions input[type="text"],
+.panel.sessions select {
+  padding: 6px 8px;
+  font-size: 12px;
 }
 .panel.sessions select {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--grid);
   color: var(--text);
-  padding: 10px 12px;
-  font-size: 14px;
-  min-width: 140px;
+  min-width: 120px;
 }
 .panel.sessions .actions button:not(.like-btn) {
-  padding: 6px 8px;
-  font-size: 11px;
+  padding: 4px 6px;
+  font-size: 10px;
 }
 .panel.sessions .stats {
   color: var(--muted);
