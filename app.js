@@ -4771,32 +4771,32 @@
       const trim = document.createElement("div");
       trim.className = "trim";
       const startLabel = document.createElement("label");
-      startLabel.textContent = "Start (s)";
+      startLabel.textContent = "Start";
       const startInput = document.createElement("input");
-      startInput.type = "number";
-      startInput.min = 0;
-      startInput.step = 0.5;
-      startInput.value = ((segment.startMs ?? 0) / 1000).toString();
+      startInput.type = "text";
+      startInput.inputMode = "numeric";
+      startInput.placeholder = "0:00";
+      startInput.value = formatTimeInput(segment.startMs ?? 0);
       const endLabel = document.createElement("label");
-      endLabel.textContent = "End (s)";
+      endLabel.textContent = "End";
       const endInput = document.createElement("input");
-      endInput.type = "number";
-      endInput.min = 0.5;
-      endInput.step = 0.5;
-      endInput.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+      endInput.type = "text";
+      endInput.inputMode = "numeric";
+      endInput.placeholder = formatTimeInput(segment.duration || 0);
+      endInput.value = formatTimeInput(segment.endMs ?? segment.duration);
 
       const startRange = document.createElement("input");
       startRange.type = "range";
       startRange.min = 0;
       startRange.max = segment.duration / 1000;
-      startRange.step = 0.5;
+      startRange.step = 1;
       startRange.value = (segment.startMs / 1000).toString();
 
       const endRange = document.createElement("input");
       endRange.type = "range";
       endRange.min = 0.5;
       endRange.max = segment.duration / 1000;
-      endRange.step = 0.5;
+      endRange.step = 1;
       endRange.value = ((segment.endMs ?? segment.duration) / 1000).toString();
 
       const clampTrim = () => {
@@ -4808,25 +4808,44 @@
       };
 
       const syncInputs = () => {
-        startInput.value = (segment.startMs / 1000).toString();
-        endInput.value = ((segment.endMs ?? segment.duration) / 1000).toString();
+        startInput.value = formatTimeInput(segment.startMs);
+        endInput.value = formatTimeInput(segment.endMs ?? segment.duration);
         startRange.value = (segment.startMs / 1000).toString();
         endRange.value = ((segment.endMs ?? segment.duration) / 1000).toString();
         updateFill();
       };
 
-      startInput.addEventListener("input", (e) => {
-        segment.startMs = Math.max(0, Number(e.target.value) * 1000);
+      const applyStartInput = () => {
+        const parsed = parseTimeInput(startInput.value);
+        if (parsed == null) {
+          syncInputs();
+          return;
+        }
+        segment.startMs = parsed;
         clampTrim();
         syncInputs();
         renderShowLength();
-      });
+      };
 
-      endInput.addEventListener("input", (e) => {
-        segment.endMs = Number(e.target.value) * 1000;
+      const applyEndInput = () => {
+        const parsed = parseTimeInput(endInput.value);
+        if (parsed == null) {
+          syncInputs();
+          return;
+        }
+        segment.endMs = parsed;
         clampTrim();
         syncInputs();
         renderShowLength();
+      };
+
+      startInput.addEventListener("blur", applyStartInput);
+      endInput.addEventListener("blur", applyEndInput);
+      startInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") applyStartInput();
+      });
+      endInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") applyEndInput();
       });
 
       startRange.addEventListener("input", (e) => {
@@ -5737,6 +5756,37 @@
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = String(totalSeconds % 60).padStart(2, "0");
     return `${minutes}:${seconds}`;
+  }
+
+  function formatTimeInput(ms) {
+    if (ms == null || Number.isNaN(ms)) return "0:00";
+    const totalSeconds = Math.max(0, ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds - minutes * 60;
+    const whole = Math.floor(seconds);
+    const frac = seconds - whole;
+    if (frac < 0.01) {
+      return `${minutes}:${String(whole).padStart(2, "0")}`;
+    }
+    const tenths = Math.round(frac * 10);
+    return `${minutes}:${String(whole).padStart(2, "0")}.${tenths}`;
+  }
+
+  function parseTimeInput(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    if (raw.includes(":")) {
+      const parts = raw.split(":").map((p) => p.trim());
+      if (parts.length < 2) return null;
+      const minutes = Number(parts[0]);
+      const seconds = Number(parts.slice(1).join(".").replace(/[^0-9.]/g, ""));
+      if (Number.isNaN(minutes) || Number.isNaN(seconds)) return null;
+      return Math.max(0, (minutes * 60 + seconds) * 1000);
+    }
+    const seconds = Number(raw);
+    if (Number.isNaN(seconds)) return null;
+    return Math.max(0, seconds * 1000);
   }
 
   function getTrackIdFromUri(uri) {
