@@ -135,6 +135,7 @@ p {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: start;
+  justify-items: start;
 }
 
 .hero-left {
@@ -153,6 +154,7 @@ p {
   border: 1px solid var(--grid);
   max-width: 260px;
   align-self: flex-start;
+  justify-self: end;
 }
 
 .profile-controls {
@@ -1401,7 +1403,7 @@ textarea:focus-visible {
 }
 .hero-profile-chip {
   position: absolute;
-  top: 18px;
-  right: 18px;
+  top: 14px;
+  right: 14px;
   min-width: 180px;
 }
