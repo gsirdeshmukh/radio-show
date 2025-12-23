@@ -82,6 +82,7 @@ p {
   grid-template-columns: 1.15fr 1.2fr 1fr;
   gap: 16px;
   margin-bottom: 18px;
+  align-items: start;
 }
 
 .hero-shell .panel-head {
@@ -129,6 +130,19 @@ p {
   padding-right: 200px;
 }
 
+.hero-main {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .hero-profile {
   display: flex;
   flex-direction: column;
@@ -138,7 +152,7 @@ p {
   background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
   border: 1px solid var(--grid);
   max-width: 260px;
-  align-self: flex-end;
+  align-self: flex-start;
 }
 
 .profile-controls {
@@ -1339,6 +1353,9 @@ textarea:focus-visible {
   }
   .hero-card {
     padding-right: 20px;
+  }
+  .hero-main {
+    grid-template-columns: 1fr;
   }
   .workspace {
     grid-template-columns: 1fr;
