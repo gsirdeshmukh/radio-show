@@ -80,8 +80,29 @@ p {
   z-index: 1;
   display: grid;
   grid-template-columns: 1.15fr 1.2fr 1fr;
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 18px;
+}
+
+.hero-shell .panel-head {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+}
+
+.hero-shell input[type="text"],
+.hero-shell select {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.hero-shell button:not(.theme-dot):not(.font-dot) {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.hero-shell button.small {
+  padding: 5px 8px;
+  font-size: 10px;
 }
 
 .hero-shell.listener-hero {
@@ -95,7 +116,7 @@ p {
   border: 1px solid var(--grid);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-soft);
-  padding: 20px 20px;
+  padding: 16px 16px;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -103,19 +124,21 @@ p {
 .hero-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   position: relative;
-  padding-right: 220px;
+  padding-right: 200px;
 }
 
 .hero-profile {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
   border: 1px solid var(--grid);
+  max-width: 260px;
+  align-self: flex-end;
 }
 
 .profile-controls {
@@ -125,13 +148,14 @@ p {
 }
 
 .title-block h1 {
-  font-size: 32px;
+  font-size: 28px;
   color: var(--accent);
 }
 
 .title-block .lede {
   max-width: 520px;
   color: var(--muted);
+  font-size: 14px;
 }
 
 .tag {
@@ -145,7 +169,7 @@ p {
 .status-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -153,12 +177,12 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--grid);
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.02em;
 }
 
@@ -175,9 +199,9 @@ p {
   text-overflow: ellipsis;
   border: 1px solid var(--grid);
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   position: relative;
   background: color-mix(in srgb, var(--panel-strong) 65%, transparent);
 }
@@ -252,7 +276,7 @@ p {
 .switch-label {
   text-transform: none;
   letter-spacing: 0.04em;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -263,14 +287,14 @@ p {
   background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
   border: 1px solid var(--grid);
   border-radius: var(--radius-xl);
-  padding: 12px 14px;
+  padding: 10px 12px;
   box-shadow: var(--shadow-soft);
-  min-width: 190px;
+  min-width: 170px;
 }
 
 .profile-avatar {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   background: linear-gradient(120deg, var(--accent), var(--accent-2));
   background-size: cover;
@@ -283,6 +307,7 @@ p {
   font-weight: 600;
   color: var(--text);
   line-height: 1.4;
+  font-size: 13px;
 }
 
 .theme-switch {
@@ -297,8 +322,8 @@ p {
 
 .theme-dot,
 .font-dot {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid var(--grid);
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -310,8 +335,8 @@ p {
 .theme-dot::after,
 .font-dot::after {
   content: "";
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   background: #f2f6ff;
   border-radius: 2px;
   position: absolute;
@@ -346,8 +371,8 @@ p {
   appearance: none;
   border: 2px solid var(--grid);
   border-radius: 50%;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   background: none;
   cursor: pointer;
