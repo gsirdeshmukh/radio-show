@@ -12,6 +12,9 @@ This repo expects a Supabase project with Storage buckets and Edge Functions. Ke
 - `SESSION_BUCKET` — defaults to `sessions`.
 - `ASSET_BUCKET` — defaults to `assets`.
 - Optional: `ALLOW_ANON_CREATE` (`true` to let unauthenticated calls create sessions; otherwise requires a Supabase auth JWT).
+- `SUPABASE_JWT_SECRET` (required for Clerk exchange)
+- `CLERK_JWKS_URL` (optional; defaults to `https://api.clerk.com/v1/jwks`)
+- `CLERK_ISSUER` (optional; if set, Clerk JWT `iss` must match)
 
 ## Deploying functions
 From repo root (with Supabase CLI installed and logged in):
@@ -21,6 +24,7 @@ supabase functions deploy list_sessions
 supabase functions deploy get_session
 supabase functions deploy record_event
 supabase functions deploy sync_spotify_profile
+supabase functions deploy clerk_exchange
 supabase functions deploy start_live
 supabase functions deploy end_live
 supabase functions deploy list_live
@@ -51,3 +55,6 @@ Key tables:
 
 ## Minimal auth story
 Edge Functions accept the caller’s `Authorization` header. If you want uploads gated, set `ALLOW_ANON_CREATE` to `false` and require a Supabase-authenticated JWT in the frontend before invoking functions. For fast testing, leave it `true` but enable rate limits.
+
+## Clerk exchange
+The `clerk_exchange` function verifies a Clerk session token, derives a stable UUID for the user, upserts the profile, and returns a Supabase JWT compatible with RLS. The frontend then uses that JWT for profile, follow, and inbox operations.

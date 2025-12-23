@@ -6,6 +6,8 @@
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdXlpaHpqcXBjY3pla2hvcnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTQ3NzQsImV4cCI6MjA4MTA5MDc3NH0.I74X4-qJxOTDUxocRnPOhS_pG51ipfquFQOslzlHKCQ";
   const APPLE_DEVELOPER_TOKEN = "APPLE_DEV_TOKEN_PLACEHOLDER"; // Replace with your Apple Music JWT
   const APPLE_TEST_TRACK = "900032829"; // Replace with a real catalog track ID
+  const CLERK_PUBLISHABLE_KEY = "pk_test_dW5pZmllZC1yYXB0b3ItOC5jbGVyay5hY2NvdW50cy5kZXYk";
+  const CLERK_EXCHANGE_FN = "clerk_exchange";
   const SOUND_CLOUD_CLIENT_ID_KEY = "rs_sc_client_id";
   const DEFAULT_SOUNDCLOUD_CLIENT_ID = "a281953d7fedd08d1a49c517fdbeba2c";
   const SOUND_CLOUD_TOKEN_KEY = "rs_sc_token";
@@ -64,6 +66,15 @@
 		    supabaseKey: "",
 		    supabaseAuthSub: null,
 		    supabaseSession: null,
+		    supabaseAuthToken: "",
+		    clerk: {
+		      userId: "",
+		      email: "",
+		      sessionToken: "",
+		      userUuid: "",
+		      authed: false,
+		      loading: false,
+		    },
 		    spotifyProfile: null,
 		    sessions: [],
 		    sessionsQuery: "",
@@ -196,10 +207,9 @@
     dom.multiSeed = document.getElementById("multi-seed");
 	    dom.supabaseUrlInput = document.getElementById("supabase-url");
     dom.supabaseKeyInput = document.getElementById("supabase-key");
-    dom.supabaseEmailInput = document.getElementById("supabase-email");
-    dom.supabaseSignInBtn = document.getElementById("supabase-signin");
-    dom.supabaseSignOutBtn = document.getElementById("supabase-signout");
-    dom.supabaseAuthStatus = document.getElementById("supabase-auth-status");
+    dom.clerkSignInBtn = document.getElementById("clerk-signin");
+    dom.clerkSignOutBtn = document.getElementById("clerk-signout");
+    dom.clerkAuthStatus = document.getElementById("clerk-auth-status");
     dom.scClientIdInput = document.getElementById("soundcloud-client-id");
     dom.scSearchForm = document.getElementById("sc-search-form");
     dom.scSearchInput = document.getElementById("sc-search-input");
@@ -387,11 +397,11 @@
 		        loadSupabaseSessions();
 		      });
 		    }
-		    if (dom.supabaseSignInBtn) {
-		      dom.supabaseSignInBtn.addEventListener("click", supabaseSignIn);
+		    if (dom.clerkSignInBtn) {
+		      dom.clerkSignInBtn.addEventListener("click", handleClerkSignIn);
 		    }
-		    if (dom.supabaseSignOutBtn) {
-		      dom.supabaseSignOutBtn.addEventListener("click", supabaseSignOut);
+		    if (dom.clerkSignOutBtn) {
+		      dom.clerkSignOutBtn.addEventListener("click", handleClerkSignOut);
 		    }
 		    if (dom.sessionsSearch) {
 		      dom.sessionsSearch.addEventListener("input", () => {
@@ -1174,8 +1184,15 @@
 	        }
 	        state.supabaseAuthSub = null;
 	      }
-	      state.supabaseSession = null;
-	      state.supabase = window.supabase.createClient(url, anon);
+	      state.supabaseSession = state.supabaseAuthToken ? state.supabaseSession : null;
+	      const authToken = state.supabaseAuthToken || "";
+	      const client = authToken
+	        ? window.supabase.createClient(url, anon, { global: { headers: { Authorization: `Bearer ${authToken}` } } })
+	        : window.supabase.createClient(url, anon);
+	      if (authToken && client.realtime?.setAuth) {
+	        client.realtime.setAuth(authToken);
+	      }
+	      state.supabase = client;
 		      state.supabaseUrl = url;
 		      state.supabaseKey = anon;
 		      localStorage.setItem(SUPABASE_URL_KEY, url);
@@ -1192,7 +1209,7 @@
 
 			  function ensureSupabaseAuth() {
 			    const client = state.supabase;
-			    if (!client || state.supabaseAuthSub) return;
+			    if (!client || state.supabaseAuthSub || state.supabaseAuthToken) return;
 			    try {
 				      const { data } = client.auth.onAuthStateChange((_event, session) => {
 				        state.supabaseSession = session || null;
@@ -1213,12 +1230,7 @@
 
 				  function renderSupabaseAuthStatus() {
 				    const email = state.supabaseSession?.user?.email || "";
-				    const authed = !!email;
-				    if (dom.supabaseAuthStatus) {
-				      dom.supabaseAuthStatus.textContent = authed ? `supabase: ${email}` : "supabase: signed out";
-				    }
-				    if (dom.supabaseSignInBtn) dom.supabaseSignInBtn.disabled = authed;
-				    if (dom.supabaseSignOutBtn) dom.supabaseSignOutBtn.disabled = !authed;
+				    const authed = !!state.supabaseSession?.user?.id;
 				    const prev = !!state.supabaseAuthed;
 				    state.supabaseAuthed = authed;
 				    if (prev !== authed) {
@@ -1227,8 +1239,144 @@
 				  }
 
 			  function getSupabaseAuthHeaders() {
-			    const token = state.supabaseSession?.access_token || "";
+			    const token = state.supabaseAuthToken || state.supabaseSession?.access_token || "";
 			    return token ? { Authorization: `Bearer ${token}` } : {};
+			  }
+
+			  function renderClerkAuthStatus() {
+			    const email = state.clerk?.email || "";
+			    const authed = !!state.clerk?.authed;
+			    if (dom.clerkAuthStatus) {
+			      dom.clerkAuthStatus.textContent = authed ? `clerk: ${email || "signed in"}` : "clerk: signed out";
+			    }
+			    if (dom.clerkSignInBtn) dom.clerkSignInBtn.disabled = authed;
+			    if (dom.clerkSignOutBtn) dom.clerkSignOutBtn.disabled = !authed;
+			  }
+
+			  function setSupabaseSessionFromClerk({ userId, email, token }) {
+			    state.supabaseAuthToken = token || "";
+			    state.supabaseSession = userId
+			      ? {
+			          user: { id: userId, email: email || "" },
+			          access_token: token || "",
+			        }
+			      : null;
+			    renderSupabaseAuthStatus();
+			    initSupabaseClient();
+			  }
+
+			  function clearClerkAuth() {
+			    const prev = !!state.supabaseAuthed;
+			    state.clerk = {
+			      userId: "",
+			      email: "",
+			      sessionToken: "",
+			      userUuid: "",
+			      authed: false,
+			      loading: false,
+			    };
+			    state.supabaseAuthToken = "";
+			    state.supabaseSession = null;
+			    state.supabaseAuthed = false;
+			    renderClerkAuthStatus();
+			    initSupabaseClient();
+			    if (prev) {
+			      handleSupabaseAuthedState(false).catch(() => {});
+			    }
+			  }
+
+			  async function exchangeClerkForSupabase(sessionToken, user) {
+			    if (!sessionToken) return;
+			    const supabaseUrl = state.supabaseUrl || localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+			    if (!supabaseUrl) return;
+			    const body = {
+			      email: user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || "",
+			      display_name: user?.fullName || user?.firstName || "",
+			      avatar_url: user?.imageUrl || "",
+			      spotify_display_name: state.spotifyProfile?.display_name || "",
+			      spotify_avatar_url: state.spotifyProfile?.images?.[0]?.url || "",
+			    };
+			    try {
+			      const res = await fetch(`${supabaseUrl}/functions/v1/${CLERK_EXCHANGE_FN}`, {
+			        method: "POST",
+			        headers: {
+			          Authorization: `Bearer ${sessionToken}`,
+			          "Content-Type": "application/json",
+			        },
+			        body: JSON.stringify(body),
+			      });
+			      if (!res.ok) {
+			        const text = await res.text();
+			        throw new Error(text || `Exchange failed: ${res.status}`);
+			      }
+			      const data = await res.json();
+			      const token = data?.supabase_jwt || "";
+			      const userId = data?.user_id || "";
+			      if (token && userId) {
+			        state.clerk.userUuid = userId;
+			        setSupabaseSessionFromClerk({ userId, email: body.email, token });
+			      }
+			    } catch (err) {
+			      console.warn("Clerk exchange failed", err);
+			    }
+			  }
+
+			  async function syncClerkState() {
+			    if (!window.Clerk) return;
+			    const user = window.Clerk.user;
+			    const session = window.Clerk.session;
+			    if (!user || !session) {
+			      clearClerkAuth();
+			      return;
+			    }
+			    state.clerk.userId = user.id || "";
+			    state.clerk.email = user.primaryEmailAddress?.emailAddress || "";
+			    state.clerk.authed = true;
+			    renderClerkAuthStatus();
+			    try {
+			      const token = await session.getToken();
+			      state.clerk.sessionToken = token || "";
+			      await exchangeClerkForSupabase(state.clerk.sessionToken, user);
+			    } catch (err) {
+			      console.warn("Clerk token fetch failed", err);
+			    }
+			  }
+
+			  async function initClerk() {
+			    if (!CLERK_PUBLISHABLE_KEY) return;
+			    if (!window.Clerk) {
+			      setTimeout(() => initClerk(), 200);
+			      return;
+			    }
+			    try {
+			      await window.Clerk.load({ publishableKey: CLERK_PUBLISHABLE_KEY });
+			      window.Clerk.addListener(() => {
+			        syncClerkState().catch(() => {});
+			      });
+			      await syncClerkState();
+			    } catch (err) {
+			      console.warn("Clerk init failed", err);
+			    }
+			  }
+
+			  async function handleClerkSignIn() {
+			    if (!window.Clerk) return;
+			    try {
+			      await window.Clerk.openSignIn();
+			    } catch (err) {
+			      console.warn("Clerk sign-in failed", err);
+			    }
+			  }
+
+			  async function handleClerkSignOut() {
+			    if (!window.Clerk) return;
+			    try {
+			      await window.Clerk.signOut();
+			    } catch (err) {
+			      console.warn("Clerk sign-out failed", err);
+			    } finally {
+			      clearClerkAuth();
+			    }
 			  }
 
 						  async function handleSupabaseAuthedState(authed) {
@@ -1322,7 +1470,7 @@
 			    const client = initSupabaseClient();
 			    const uid = state.supabaseSession?.user?.id || "";
 			    if (!client || !uid) {
-			      alert("Sign in with Supabase to save profile settings.");
+			      alert("Sign in to save profile settings.");
 			      return;
 			    }
 			    const handle = normalizeHandle(dom.profileHandleInput?.value || "");
@@ -1397,7 +1545,7 @@
 			    const client = initSupabaseClient();
 			    const uid = state.supabaseSession?.user?.id || "";
 			    if (!client || !uid) {
-			      alert("Sign in with Supabase to follow.");
+			      alert("Sign in to follow.");
 			      return;
 			    }
 			    try {
@@ -1591,7 +1739,7 @@
 				        followBtn.type = "button";
 				        followBtn.textContent = "Follow";
 				        followBtn.disabled = true;
-				        followBtn.title = "Sign in with Supabase to follow.";
+				      followBtn.title = "Sign in to follow.";
 				        actions.appendChild(followBtn);
 				      }
 
@@ -1609,7 +1757,7 @@
 					    const client = initSupabaseClient();
 					    const uid = state.supabaseSession?.user?.id || "";
 					    if (!client || !uid) {
-					      alert("Sign in with Supabase to send.");
+					      alert("Sign in to send.");
 				      return;
 				    }
 			    const raw = prompt("Send to handle (e.g. @someone):") || "";
@@ -1838,7 +1986,7 @@
 				    const client = initSupabaseClient();
 				    const uid = state.supabaseSession?.user?.id || "";
 				    if (!client || !uid) {
-				      alert("Sign in with Supabase to send.");
+				      alert("Sign in to send.");
 				      return;
 				    }
 				    const sid = String(sessionId || "").trim();
@@ -1971,7 +2119,7 @@
 				    const client = initSupabaseClient();
 				    const uid = state.supabaseSession?.user?.id || "";
 				    if (!client || !uid) {
-				      alert("Sign in with Supabase to send.");
+				      alert("Sign in to send.");
 				      return;
 				    }
 				    const sessionId = state.sendSheetSessionId;
@@ -2216,41 +2364,6 @@
 				    } catch (err) {
 			      console.warn("inbox subscribe failed", err);
 			      state.inboxChannel = null;
-			    }
-			  }
-
-				  async function supabaseSignIn() {
-				    const client = initSupabaseClient();
-				    if (!client) {
-				      alert("Supabase not configured");
-				      return;
-				    }
-			    const email = (dom.supabaseEmailInput?.value || "").trim();
-			    if (!email) {
-			      alert("Enter an email address first.");
-			      return;
-			    }
-			    try {
-			      const redirect = `${window.location.origin}${window.location.pathname}`;
-			      const { error } = await client.auth.signInWithOtp({
-			        email,
-			        options: { emailRedirectTo: redirect },
-			      });
-				      if (error) throw error;
-				      alert("Check your email for the sign-in link.");
-				    } catch (err) {
-				      console.warn("Supabase sign-in failed", err);
-				      alert(`Supabase sign-in failed: ${err?.message || "unknown error"}`);
-				    }
-				  }
-
-			  async function supabaseSignOut() {
-			    const client = initSupabaseClient();
-			    if (!client) return;
-			    try {
-			      await client.auth.signOut();
-			    } catch (err) {
-			      console.warn("Supabase sign-out failed", err);
 			    }
 			  }
 
@@ -3176,7 +3289,7 @@
 					  async function toggleLiveMic() {
 					    const uid = state.supabaseSession?.user?.id || "";
 				    if (!uid) {
-				      alert("Sign in with Supabase to enable mic.");
+				      alert("Sign in to enable mic.");
 				      return;
 				    }
 				    if (!isHostInLiveRoom()) {
@@ -3217,7 +3330,7 @@
 					  async function toggleLiveAudio() {
 					    const uid = state.supabaseSession?.user?.id || "";
 				    if (!uid) {
-				      alert("Sign in with Supabase to enable audio.");
+				      alert("Sign in to enable audio.");
 				      return;
 				    }
 				    if (isHostInLiveRoom()) {
@@ -3429,7 +3542,7 @@
 			    const uid = state.supabaseSession?.user?.id || "";
 			    const liveId = state.liveRoom?.id || "";
 			    if (!client || !uid) {
-			      alert("Sign in with Supabase to chat.");
+			      alert("Sign in to chat.");
 			      return;
 			    }
 			    if (!liveId) return;
@@ -3458,7 +3571,7 @@
 		    const client = initSupabaseClient();
 		    const uid = state.supabaseSession?.user?.id || "";
 		    if (!client || !uid) {
-		      alert("Sign in with Supabase to go live.");
+		      alert("Sign in to go live.");
 		      return;
 		    }
 		    try {
@@ -3830,6 +3943,8 @@
 			    hydrateProfileSettingsFromLocal();
 			    renderPeopleResults();
 			    renderSupabaseAuthStatus();
+			    renderClerkAuthStatus();
+			    initClerk();
 		    loadSupabaseSessions();
 		    applySavedTheme();
 		    applySavedFont();
@@ -3979,6 +4094,13 @@
       renderProfileChip(profile);
       if (dom.sessionHost && !dom.sessionHost.value) {
         dom.sessionHost.value = profile.display_name || profile.id || "";
+      }
+      if (dom.profileHandleInput && !dom.profileHandleInput.value) {
+        const handle = normalizeHandle(profile.display_name || profile.id || "");
+        if (handle) {
+          dom.profileHandleInput.value = handle;
+          localStorage.setItem(PROFILE_HANDLE_KEY, handle);
+        }
       }
       syncProfileToSupabase(profile).catch(() => {});
       return profile;
