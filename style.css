@@ -172,6 +172,7 @@ p {
   max-width: 320px;
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
   border: 1px solid var(--grid);
   border-radius: 999px;
   padding: 8px 12px;
@@ -182,7 +183,7 @@ p {
 }
 
 .ticker span {
-  display: inline-flex;
+  display: inline-block;
   align-items: center;
 }
 

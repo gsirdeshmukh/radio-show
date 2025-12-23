@@ -531,15 +531,12 @@
   }
 
   function setTicker(segment) {
+    if (!dom.ticker) return;
     const info = segment
       ? [segment.title || "", segment.subtitle || "", segment.album?.name || ""].filter(Boolean)
-      : ["now playing: —"];
-    if (info.length > 1) {
-      const frames = info.map((t) => `<span>${t}</span>`).join("");
-      dom.ticker.innerHTML = frames;
-    } else {
-      dom.ticker.innerHTML = `<span>${info[0]}</span>`;
-    }
+      : [];
+    const details = info.length ? info.join(" • ") : "—";
+    dom.ticker.innerHTML = `<span>now playing: ${details}</span>`;
   }
 
   function toggleConnectPanel() {
